@@ -15,13 +15,14 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
 from .const import (
     ATTR_DAYS_SINCE_FERTILIZED,
     ATTR_DEW_POINT,
     ATTR_DEW_SPREAD,
+    ATTR_DRYING_RATE,
     ATTR_GDD,
     ATTR_GROWTH_INDEX,
     ATTR_MOISTURE_SCORE,
@@ -30,6 +31,7 @@ from .const import (
     ATTR_REMAINING_MINUTES,
     ATTR_RUNS_COUNT,
     ATTR_TARGET_MINUTES,
+    ATTR_WETTING_RATE,
     CONF_DEW_SPREAD_MIN,
     CONF_EDGE_CUT_DATA,
     CONF_EDGE_CUT_INTERVAL,
@@ -38,18 +40,25 @@ from .const import (
     CONF_LAWN_AREA,
     CONF_MAX_RUN_TIME,
     CONF_MIN_BATTERY_LEVEL,
+    CONF_MIN_TEMP,
+    CONF_MOISTURE_THRESHOLD,
     CONF_MOWER_CAPACITY,
     CONF_MOWER_ENTITY,
     CONF_MOWER_TYPE,
     CONF_MULTI_CYCLE,
     CONF_QUIET_HOURS_END,
     CONF_QUIET_HOURS_START,
+    CONF_RADAR_RAIN_BUFFER,
     CONF_SENSOR_BATTERY,
+    CONF_SENSOR_DEW_POINT,
     CONF_SENSOR_HUMIDITY,
+    CONF_SENSOR_MOISTURE_SCORE,
+    CONF_SENSOR_MOWER_RAIN,
     CONF_SENSOR_RAIN,
     CONF_SENSOR_RAIN_RADAR,
     CONF_SENSOR_SOIL,
     CONF_SENSOR_SOLAR,
+    CONF_SENSOR_SOLAR_DIFF,
     CONF_SENSOR_TEMP,
     CONF_SENSOR_WIND,
     CONF_WEATHER_ENTITY,
@@ -62,13 +71,15 @@ from .const import (
     DEFAULT_HEAT_LIMIT,
     DEFAULT_LAWN_AREA,
     DEFAULT_MIN_BATTERY,
+    DEFAULT_MIN_TEMP,
+    DEFAULT_MOISTURE_THRESHOLD,
     DEFAULT_MOWER_TYPE,
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
+    DEFAULT_RADAR_RAIN_BUFFER,
     DEFAULT_WILDLIFE_SUNRISE,
     DEFAULT_WILDLIFE_SUNSET,
     DOMAIN,
-    MOWER_TYPE_SYSTEMATIC,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
@@ -76,11 +87,13 @@ from .engine import (
     MoistureStatus,
     SlotEvaluation,
     calculate_daily_target_minutes,
+    calculate_dew_point,
+    calculate_drying_rate,
     calculate_fertilizer_factor,
     calculate_gdd,
     calculate_growth_index,
     calculate_soil_factor,
-    evaluate_moisture,
+    calculate_wetting_rate,
     evaluate_slot,
 )
 
@@ -111,6 +124,8 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.total_runs_count: int = 0
         self.edge_cut_next: bool = False
         self.auto_mow_enabled: bool = False
+        self.internal_moisture_score: float = 0.0
+        self._last_moisture_update: datetime = dt_util.now()
 
         # Live session tracking
         self._session_start_time: datetime | None = None
@@ -119,7 +134,6 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_setup(self) -> None:
         """Load stored data and register state change listeners."""
-        # Load stored data
         stored = await self._store.async_load()
         if isinstance(stored, dict):
             self.last_fertilized_date = stored.get("last_fertilized_date")
@@ -128,15 +142,16 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.total_runs_count = int(stored.get("total_runs_count", 0))
             self.edge_cut_next = bool(stored.get("edge_cut_next", False))
             self.auto_mow_enabled = bool(stored.get("auto_mow_enabled", False))
+            self.internal_moisture_score = float(stored.get("internal_moisture_score", 0.0))
 
-        # Check date rollover
+        # Date rollover check
         today_str = dt_util.now().date().isoformat()
         if self.last_reset_date != today_str:
             self.mowed_minutes_today = 0.0
             self.last_reset_date = today_str
             await self._async_save()
 
-        # Listen to mower state changes in real time
+        # Listen to mower entity in real time
         mower_entity = self._get_opt(CONF_MOWER_ENTITY)
         if mower_entity:
             self._unsub_trackers.append(
@@ -145,18 +160,24 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             )
 
-        # Listen to weather and radar changes
-        radar_entity = self._get_opt(CONF_SENSOR_RAIN_RADAR)
-        entities_to_watch = [e for e in [self._get_opt(CONF_WEATHER_ENTITY), radar_entity] if e]
+        # Listen to weather, radar, moisture score and rain sensors in real time
+        watch_list = [
+            self._get_opt(CONF_WEATHER_ENTITY),
+            self._get_opt(CONF_SENSOR_RAIN_RADAR),
+            self._get_opt(CONF_SENSOR_RAIN),
+            self._get_opt(CONF_SENSOR_MOWER_RAIN),
+            self._get_opt(CONF_SENSOR_MOISTURE_SCORE),
+        ]
+        entities_to_watch = [e for e in watch_list if e]
         if entities_to_watch:
             self._unsub_trackers.append(
                 async_track_state_change_event(
-                    self.hass, entities_to_watch, self._handle_weather_state_change
+                    self.hass, entities_to_watch, self._handle_environment_change
                 )
             )
 
     async def async_unload(self) -> None:
-        """Unload listeners and save data."""
+        """Unload listeners and save state."""
         for unsub in self._unsub_trackers:
             unsub()
         self._unsub_trackers.clear()
@@ -171,6 +192,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "total_runs_count": self.total_runs_count,
             "edge_cut_next": self.edge_cut_next,
             "auto_mow_enabled": self.auto_mow_enabled,
+            "internal_moisture_score": round(self.internal_moisture_score, 1),
         }
         await self._store.async_save(data)
 
@@ -190,10 +212,9 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         new_val = (new_state.state or "").lower()
         old_val = (old_state.state if old_state else "").lower()
-
         now = dt_util.now()
 
-        # Mower started mowing
+        # Started mowing
         if new_val in MOWING_STATES and old_val not in MOWING_STATES:
             _LOGGER.info("MowMaster: Mower started mowing session at %s", now)
             self._session_start_time = now
@@ -202,13 +223,13 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.edge_cut_next = False
             self.hass.async_create_task(self._async_save())
 
-        # Mower finished or stopped mowing
+        # Finished or docked
         elif old_val in MOWING_STATES and new_val not in MOWING_STATES:
             if self._session_start_time:
                 duration_min = (now - self._session_start_time).total_seconds() / 60.0
                 self.mowed_minutes_today += duration_min
                 _LOGGER.info(
-                    "MowMaster: Mowing session ended. Duration: %.1f min. Today total: %.1f min",
+                    "MowMaster: Session finished. Duration: %.1f min. Today: %.1f min",
                     duration_min,
                     self.mowed_minutes_today,
                 )
@@ -219,39 +240,45 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_set_updated_data(self._calculate_all())
 
     @callback
-    def _handle_weather_state_change(self, event: Event) -> None:
-        """Handle real-time changes to weather or rain radar."""
+    def _handle_environment_change(self, event: Event) -> None:
+        """Handle real-time environmental changes (rain, radar, moisture score)."""
         self.async_set_updated_data(self._calculate_all())
 
-    def _get_sun_times(self, now: datetime) -> tuple[datetime | None, datetime | None]:
-        """Get sunrise and sunset for today."""
+    def _get_sun_times(self, now: datetime) -> tuple[datetime | None, datetime | None, float, bool]:
+        """Get sunrise, sunset, elevation and horizon status."""
+        sunrise: datetime | None = None
+        sunset: datetime | None = None
+        elevation: float = 10.0
+        above_horizon: bool = True
+
         try:
             from homeassistant.helpers import sun
 
             sr = sun.get_astral_event_date(self.hass, "sunrise", now.date())
             ss = sun.get_astral_event_date(self.hass, "sunset", now.date())
             if sr and ss:
-                return sr, ss
+                sunrise, sunset = sr, ss
         except Exception:
             pass
 
-        # Fallback using sun.sun state
         sun_state = self.hass.states.get("sun.sun")
-        if sun_state and sun_state.attributes:
-            nr = sun_state.attributes.get("next_rising")
-            ns = sun_state.attributes.get("next_setting")
-            try:
-                sr_dt = dt_util.parse_datetime(nr) if nr else None
-                ss_dt = dt_util.parse_datetime(ns) if ns else None
-                return sr_dt, ss_dt
-            except Exception:
-                pass
+        if sun_state:
+            above_horizon = sun_state.state.lower() != "below_horizon"
+            if sun_state.attributes:
+                if "elevation" in sun_state.attributes:
+                    try:
+                        elevation = float(sun_state.attributes["elevation"])
+                    except (ValueError, TypeError):
+                        pass
+                if not sunrise and "next_rising" in sun_state.attributes:
+                    sunrise = dt_util.parse_datetime(sun_state.attributes["next_rising"])
+                if not sunset and "next_setting" in sun_state.attributes:
+                    sunset = dt_util.parse_datetime(sun_state.attributes["next_setting"])
 
-        return None, None
+        return sunrise, sunset, elevation, above_horizon
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch updated data and execute autonomous decision checks."""
-        # Rollover check
         today_str = dt_util.now().date().isoformat()
         if self.last_reset_date != today_str:
             self.mowed_minutes_today = 0.0
@@ -259,17 +286,14 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._async_save()
 
         data = self._calculate_all()
-
-        # Run autonomous dispatch logic if auto_mow is enabled
         await self._async_manage_auto_mow(data)
-
         return data
 
     def _calculate_all(self) -> dict[str, Any]:
-        """Perform all mathematical and status evaluations."""
+        """Perform all mathematical, physical rate and status evaluations."""
         now = dt_util.now()
 
-        # Extract current weather & environmental readings
+        # 1. Base weather readings
         weather_entity = self._get_opt(CONF_WEATHER_ENTITY)
         weather_state = self.hass.states.get(weather_entity) if weather_entity else None
 
@@ -287,7 +311,6 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if "humidity" in attrs and attrs["humidity"] is not None:
                 current_humidity = float(attrs["humidity"])
 
-            # Forecast for GDD (min/max temp)
             forecast = attrs.get("forecast")
             if isinstance(forecast, list) and len(forecast) > 0:
                 first_fc = forecast[0]
@@ -301,7 +324,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 t_max = current_temp + 2.0
                 t_min = max(4.0, current_temp - 6.0)
 
-        # Pro sensor overrides
+        # 2. Sensor Overrides
         temp_sensor = self._get_opt(CONF_SENSOR_TEMP)
         if temp_sensor:
             st = self.hass.states.get(temp_sensor)
@@ -320,6 +343,24 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
+        # Dew point
+        dew_point: float
+        dew_sensor = self._get_opt(CONF_SENSOR_DEW_POINT)
+        if dew_sensor:
+            st = self.hass.states.get(dew_sensor)
+            if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                try:
+                    dew_point = float(st.state)
+                except ValueError:
+                    dew_point = calculate_dew_point(current_temp, current_humidity)
+            else:
+                dew_point = calculate_dew_point(current_temp, current_humidity)
+        else:
+            dew_point = calculate_dew_point(current_temp, current_humidity)
+
+        dew_spread = round(current_temp - dew_point, 2)
+
+        # Rain rate sensor
         rain_sensor = self._get_opt(CONF_SENSOR_RAIN)
         rain_rate: float = 0.0
         if rain_sensor:
@@ -328,20 +369,18 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 try:
                     rain_rate = float(st.state)
                 except ValueError:
-                    # Could be binary (on/off)
                     if st.state.lower() in ("on", "true", "wet"):
                         rain_rate = 1.0
 
-        rain_radar_sensor = self._get_opt(CONF_SENSOR_RAIN_RADAR)
-        radar_minutes: float | None = None
-        if rain_radar_sensor:
-            st = self.hass.states.get(rain_radar_sensor)
+        # Mower hardware rain sensor (e.g. binary_sensor.bobbi_regensensor)
+        mower_rain_active = False
+        mower_rain_sensor = self._get_opt(CONF_SENSOR_MOWER_RAIN)
+        if mower_rain_sensor:
+            st = self.hass.states.get(mower_rain_sensor)
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                try:
-                    radar_minutes = float(st.state)
-                except ValueError:
-                    pass
+                mower_rain_active = st.state.lower() in ("on", "true", "wet")
 
+        # Wind sensor
         wind_sensor = self._get_opt(CONF_SENSOR_WIND)
         wind_speed: float = 0.0
         if wind_sensor:
@@ -352,6 +391,18 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
+        # Solar difference (e.g. sensor.garten_sonnensensor_temperatur_ch3)
+        solar_diff_sensor = self._get_opt(CONF_SENSOR_SOLAR_DIFF)
+        diff_sonne: float = 0.0
+        if solar_diff_sensor:
+            st = self.hass.states.get(solar_diff_sensor)
+            if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                try:
+                    diff_sonne = float(st.state)
+                except ValueError:
+                    pass
+
+        # Solar pyranometer (W/m² or lx)
         solar_sensor = self._get_opt(CONF_SENSOR_SOLAR)
         solar_rad: float = 0.0
         if solar_sensor:
@@ -361,6 +412,123 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     solar_rad = float(st.state)
                 except ValueError:
                     pass
+
+        # Rain radar sensor (e.g. DWD radar)
+        rain_radar_sensor = self._get_opt(CONF_SENSOR_RAIN_RADAR)
+        radar_minutes: float | None = None
+        radar_sum: float | None = None
+        if rain_radar_sensor:
+            st = self.hass.states.get(rain_radar_sensor)
+            if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                if st.attributes and "sum" in st.attributes:
+                    try:
+                        radar_sum = float(st.attributes["sum"])
+                    except (ValueError, TypeError):
+                        pass
+
+                # Check if state is a timestamp
+                parsed_time = dt_util.parse_datetime(st.state)
+                if parsed_time:
+                    diff_sec = (parsed_time - now).total_seconds()
+                    radar_minutes = max(0.0, diff_sec / 60.0)
+                else:
+                    try:
+                        radar_minutes = float(st.state)
+                    except ValueError:
+                        pass
+
+        # Sun astronomical position
+        sunrise, sunset, elevation, above_horizon = self._get_sun_times(now)
+
+        # 3. Physical Drying & Wetting Rate Model
+        drying_rate = calculate_drying_rate(
+            temp_c=current_temp,
+            dew_c=dew_point,
+            wind_kmh=wind_speed,
+            diff_sonne=diff_sonne,
+            solar_rad_wm2=solar_rad,
+            rain_mm=rain_rate,
+            mower_wet=mower_rain_active,
+            weather_condition=weather_cond,
+            sun_elevation=elevation,
+            sun_below_horizon=not above_horizon,
+            now_month=now.month,
+        )
+
+        wetting_rate = calculate_wetting_rate(
+            temp_c=current_temp,
+            dew_c=dew_point,
+            humidity_percent=current_humidity,
+            wind_kmh=wind_speed,
+            diff_sonne=diff_sonne,
+            rain_mm=rain_rate,
+            mower_wet=mower_rain_active,
+            weather_condition=weather_cond,
+            sun_elevation=elevation,
+        )
+
+        # Moisture score determination (external helper or internal simulation)
+        score_sensor = self._get_opt(CONF_SENSOR_MOISTURE_SCORE)
+        moisture_score: float
+        if score_sensor:
+            st = self.hass.states.get(score_sensor)
+            if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                try:
+                    moisture_score = float(st.state)
+                except ValueError:
+                    moisture_score = self.internal_moisture_score
+            else:
+                moisture_score = self.internal_moisture_score
+        else:
+            # Update internal score balance across time
+            delta_hours = max(0.01, min(1.0, (now - self._last_moisture_update).total_seconds() / 3600.0))
+            self._last_moisture_update = now
+            delta = (wetting_rate - drying_rate) * delta_hours
+            rain_active = (
+                rain_rate > 0.0
+                or mower_rain_active
+                or any(
+                    rc in weather_cond.lower()
+                    for rc in ["rainy", "pouring", "lightning-rainy", "hail", "snowy", "snowy-rainy"]
+                )
+            )
+            ziel_max = 100.0 if rain_active else max(self.internal_moisture_score, 55.0)
+            self.internal_moisture_score = round(
+                min(ziel_max, max(0.0, self.internal_moisture_score + delta)), 1
+            )
+            moisture_score = self.internal_moisture_score
+
+        moisture_threshold = float(self._get_opt(CONF_MOISTURE_THRESHOLD, DEFAULT_MOISTURE_THRESHOLD))
+        is_dry = (moisture_score < moisture_threshold) and not mower_rain_active and (dew_spread >= 1.5)
+
+        if rain_rate > 0.0 or mower_rain_active:
+            desc = "Regen / Mähersensor nass"
+        elif moisture_score >= 10.0:
+            desc = "Nass / Feuchtes Rasenkonto"
+        elif not is_dry:
+            desc = "Abtrocknend / Morgentau"
+        else:
+            desc = "Trocken"
+
+        moisture_status = MoistureStatus(
+            dew_point=dew_point,
+            dew_spread=dew_spread,
+            moisture_score=moisture_score,
+            is_dry=is_dry,
+            state_description=desc,
+            drying_rate=drying_rate,
+            wetting_rate=wetting_rate,
+        )
+
+        # 4. Biological Growth & GDD
+        gdd = calculate_gdd(t_max=t_max, t_min=t_min)
+        days_since_fert: int | None = None
+        if self.last_fertilized_date:
+            try:
+                fert_d = date.fromisoformat(self.last_fertilized_date)
+                days_since_fert = (now.date() - fert_d).days
+            except Exception:
+                pass
 
         soil_sensor = self._get_opt(CONF_SENSOR_SOIL)
         soil_pct: float | None = None
@@ -372,7 +540,30 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
-        # Mower & Battery status
+        fert_factor = calculate_fertilizer_factor(days_since_fert)
+        soil_factor = calculate_soil_factor(soil_pct)
+        growth_index = calculate_growth_index(gdd, fert_factor, soil_factor)
+
+        # 5. Daily Mowing Budget
+        lawn_area = float(self._get_opt(CONF_LAWN_AREA, DEFAULT_LAWN_AREA))
+        mower_type = self._get_opt(CONF_MOWER_TYPE, DEFAULT_MOWER_TYPE)
+        custom_cap = self._get_opt(CONF_MOWER_CAPACITY)
+
+        target_minutes = calculate_daily_target_minutes(
+            lawn_area_m2=lawn_area,
+            mower_type=mower_type,
+            growth_index=growth_index,
+            custom_capacity_m2h=custom_cap,
+        )
+
+        elapsed_today = self.mowed_minutes_today
+        if self._session_start_time:
+            ongoing_min = (now - self._session_start_time).total_seconds() / 60.0
+            elapsed_today += ongoing_min
+
+        remaining_minutes = max(0, int(target_minutes - elapsed_today))
+
+        # 6. Mower & Battery status
         mower_entity = self._get_opt(CONF_MOWER_ENTITY)
         mower_state = self.hass.states.get(mower_entity) if mower_entity else None
         current_mower_state = (mower_state.state or "unknown").lower() if mower_state else "unknown"
@@ -394,66 +585,33 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
-        # 1. Biological Lawn Growth Calculations
-        gdd = calculate_gdd(t_max=t_max, t_min=t_min)
-
-        days_since_fert: int | None = None
-        if self.last_fertilized_date:
-            try:
-                fert_d = date.fromisoformat(self.last_fertilized_date)
-                days_since_fert = (now.date() - fert_d).days
-            except Exception:
-                pass
-
-        fert_factor = calculate_fertilizer_factor(days_since_fert)
-        soil_factor = calculate_soil_factor(soil_pct)
-        growth_index = calculate_growth_index(gdd, fert_factor, soil_factor)
-
-        # 2. Daily Mowing Budget
-        lawn_area = float(self._get_opt(CONF_LAWN_AREA, DEFAULT_LAWN_AREA))
-        mower_type = self._get_opt(CONF_MOWER_TYPE, DEFAULT_MOWER_TYPE)
-        custom_cap = self._get_opt(CONF_MOWER_CAPACITY)
-
-        target_minutes = calculate_daily_target_minutes(
-            lawn_area_m2=lawn_area,
-            mower_type=mower_type,
-            growth_index=growth_index,
-            custom_capacity_m2h=custom_cap,
-        )
-
-        # Elapsed today + ongoing session duration
-        elapsed_today = self.mowed_minutes_today
-        if self._session_start_time:
-            ongoing_session_min = (now - self._session_start_time).total_seconds() / 60.0
-            elapsed_today += ongoing_session_min
-
-        remaining_minutes = max(0, int(target_minutes - elapsed_today))
-
-        # 3. Moisture Evaluation
+        # 7. Slot Evaluation
         dew_spread_min = float(self._get_opt(CONF_DEW_SPREAD_MIN, DEFAULT_DEW_SPREAD_MIN))
-        moisture = evaluate_moisture(
-            temperature_c=current_temp,
-            humidity_percent=current_humidity,
-            dew_spread_threshold=dew_spread_min,
-            rain_rate_mmh=rain_rate,
-            solar_radiation_wm2=solar_rad,
-            wind_speed_kmh=wind_speed,
-        )
+        min_temp = float(self._get_opt(CONF_MIN_TEMP, DEFAULT_MIN_TEMP))
+        heat_limit = float(self._get_opt(CONF_HEAT_LIMIT, DEFAULT_HEAT_LIMIT))
+        radar_buffer = int(self._get_opt(CONF_RADAR_RAIN_BUFFER, DEFAULT_RADAR_RAIN_BUFFER))
 
-        # 4. Astronomical & Slot Evaluation
-        sunrise, sunset = self._get_sun_times(now)
         slot = evaluate_slot(
             now=now,
             current_temp=current_temp,
             humidity=current_humidity,
+            dew_point=dew_point,
             weather_condition=weather_cond,
+            moisture_score=moisture_score,
+            moisture_threshold=moisture_threshold,
             rain_rate_mmh=rain_rate,
+            mower_rain_sensor=mower_rain_active,
             rain_radar_minutes=radar_minutes,
+            rain_radar_sum=radar_sum,
+            radar_buffer_minutes=radar_buffer,
             battery_level=battery_level,
             sunrise=sunrise,
             sunset=sunset,
+            sun_elevation=elevation,
+            sun_above_horizon=above_horizon,
             dew_spread_threshold=dew_spread_min,
-            heat_limit=float(self._get_opt(CONF_HEAT_LIMIT, DEFAULT_HEAT_LIMIT)),
+            min_temp=min_temp,
+            heat_limit=heat_limit,
             wildlife_enabled=bool(self._get_opt(CONF_WILDLIFE_ENABLED, True)),
             wildlife_sunrise_offset=int(self._get_opt(CONF_WILDLIFE_SUNRISE_OFFSET, DEFAULT_WILDLIFE_SUNRISE)),
             wildlife_sunset_offset=int(self._get_opt(CONF_WILDLIFE_SUNSET_OFFSET, DEFAULT_WILDLIFE_SUNSET)),
@@ -461,8 +619,6 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             quiet_end=str(self._get_opt(CONF_QUIET_HOURS_END, DEFAULT_QUIET_HOURS_END)),
             min_battery=int(self._get_opt(CONF_MIN_BATTERY_LEVEL, DEFAULT_MIN_BATTERY)),
             remaining_minutes_today=remaining_minutes,
-            solar_radiation_wm2=solar_rad,
-            wind_speed_kmh=wind_speed,
         )
 
         return {
@@ -471,11 +627,13 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "rain_blocked": slot.rain_blocked,
             "dew_blocked": slot.dew_blocked,
             "heat_blocked": slot.heat_blocked,
+            "cold_blocked": slot.cold_blocked,
             "wildlife_blocked": slot.wildlife_blocked,
             "quiet_hours_blocked": slot.quiet_hours_blocked,
             "battery_blocked": slot.battery_blocked,
+            "seasonal_time_blocked": slot.seasonal_time_blocked,
             "urgency_score": slot.urgency_score,
-            "moisture_status": moisture,
+            "moisture_status": moisture_status,
             "growth_index": growth_index,
             "gdd": gdd,
             "days_since_fertilized": days_since_fert,
@@ -489,6 +647,10 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "battery_level": battery_level,
             "temperature": current_temp,
             "humidity": current_humidity,
+            "dew_point": dew_point,
+            "dew_spread": dew_spread,
+            "drying_rate": drying_rate,
+            "wetting_rate": wetting_rate,
         }
 
     async def _async_manage_auto_mow(self, data: dict[str, Any]) -> None:
@@ -504,56 +666,47 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         is_permitted = data.get("mowing_permitted", False)
         remaining_min = data.get("remaining_minutes_today", 0)
 
-        # CASE 1: Mower is currently mowing - check safety & anti-overmowing rules
+        # Mower is active - check limits and acute weather changes
         if current_state in MOWING_STATES:
-            # Check maximum single-run duration (anti-overmowing / early recall)
             max_run = int(self._get_opt(CONF_MAX_RUN_TIME, 0))
             if max_run > 0 and self._session_start_time:
                 now = dt_util.now()
                 ongoing_min = (now - self._session_start_time).total_seconds() / 60.0
                 if ongoing_min >= max_run:
-                    _LOGGER.info(
-                        "MowMaster: Session limit reached (%.1f / %d min). Calling mower to dock.",
-                        ongoing_min,
-                        max_run,
-                    )
+                    _LOGGER.info("MowMaster: Max session limit reached (%.1f min). Recalling.", ongoing_min)
                     await self.async_dock_mower()
                     return
 
-            # Check if daily budget is exhausted
             if remaining_min <= 0:
-                _LOGGER.info("MowMaster: Daily budget reached. Recalling mower.")
+                _LOGGER.info("MowMaster: Daily budget finished. Recalling mower to dock.")
                 await self.async_dock_mower()
                 return
 
-            # Check acute safety blocks (e.g. rain started, heat spike, quiet hours)
             if data.get("rain_blocked") or data.get("heat_blocked") or data.get("wildlife_blocked"):
                 _LOGGER.warning(
-                    "MowMaster: Unsafe condition detected while mowing (%s). Recalling mower immediately.",
+                    "MowMaster: Unsafe condition (%s). Calling mower home immediately.",
                     data.get("blocking_reasons"),
                 )
                 await self.async_dock_mower()
                 return
 
-        # CASE 2: Mower is docked & conditions are ideal -> Dispatch!
+        # Mower is docked - check if conditions are green
         elif current_state in DOCKED_STATES:
             multi_cycle = bool(self._get_opt(CONF_MULTI_CYCLE, True))
-            # Start only if permitted and remaining mowing needed is significant (> 10 min)
             if is_permitted and remaining_min >= 10:
                 if self.mowed_minutes_today == 0 or multi_cycle:
                     _LOGGER.info(
-                        "MowMaster: Conditions optimal and budget remaining (%d min). Starting mowing session.",
+                        "MowMaster: Optimal slot! Remaining: %d min. Dispatching mower.",
                         remaining_min,
                     )
                     await self.async_start_mowing()
 
     async def async_start_mowing(self) -> None:
-        """Trigger mower start, including edge-cutting service if scheduled."""
+        """Trigger mower start, executing edge-cutting service if scheduled."""
         mower_entity = self._get_opt(CONF_MOWER_ENTITY)
         if not mower_entity:
             return
 
-        # Check if edge cut is scheduled
         edge_interval = int(self._get_opt(CONF_EDGE_CUT_INTERVAL, 0))
         should_cut_edge = self.edge_cut_next or (
             edge_interval > 0 and (self.total_runs_count % edge_interval == 0)
@@ -575,13 +728,12 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except Exception as err:
                     _LOGGER.warning("Could not parse edge cut service data: %s", err)
 
-            _LOGGER.info("MowMaster: Calling custom edge cut service %s with %s", edge_service, call_data)
+            _LOGGER.info("MowMaster: Calling edge cut service %s with %s", edge_service, call_data)
             await self.hass.services.async_call(domain, svc, call_data, blocking=True)
             self.edge_cut_next = False
             await self._async_save()
             return
 
-        # Standard HA lawn_mower start call
         _LOGGER.info("MowMaster: Calling lawn_mower.start_mowing for %s", mower_entity)
         await self.hass.services.async_call(
             "lawn_mower",
@@ -605,7 +757,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def async_set_fertilized(self, d: date | None = None) -> None:
-        """Record today (or specified date) as fertilization date."""
+        """Record fertilization date."""
         target_d = d or dt_util.now().date()
         self.last_fertilized_date = target_d.isoformat()
         await self._async_save()

@@ -8,7 +8,55 @@
           "mower_entity": "Mähroboter-Entität",
           "weather_entity": "Wetterdienst-Entität",
           "lawn_area": "Rasenfläche (m²)",
-          "mower_type": "Navigationsprinzip des Mähers"
+          "mower_type": "Navigationsprinzip des Mähers",
+          "configure_pro": "Erweiterte Pro-Einstellungen jetzt konfigurieren"
+        }
+      },
+      "pro_sensors": {
+        "title": "Schritt 2: Lokale Sensoren & Rasenfeuchte",
+        "description": "Ersetze Standard-Wetterwerte durch deine eigene Wetterstation oder binde vorhandene Rasen-Nässe-Scores und Hardware-Regensensoren ein.",
+        "data": {
+          "sensor_temp": "Lokaler Außentemperatur-Sensor",
+          "sensor_humidity": "Lokaler Luftfeuchtigkeits-Sensor",
+          "sensor_dew_point": "Taupunkt-Sensor (z.B. DWD oder Wetterstation)",
+          "sensor_moisture_score": "Vorhandener Rasen Nässe-Score (z.B. input_number.rasen_naesse_score)",
+          "sensor_mower_rain": "Mäher-Hardware-Regensensor (z.B. binary_sensor.bobbi_regensensor)",
+          "sensor_rain": "Regensensor / Niederschlagsrate",
+          "sensor_rain_radar": "Regenradar-Sensor (z.B. DWD nächster Regen)",
+          "sensor_solar_diff": "Sonnensensor Differenztemperatur (z.B. Homematic Ch3)",
+          "sensor_solar": "Sonneneinstrahlung (W/m² oder Lux)",
+          "sensor_wind": "Windgeschwindigkeit (km/h)",
+          "sensor_soil": "Bodenfeuchte-Sensor (%)",
+          "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
+        }
+      },
+      "pro_thresholds": {
+        "title": "Schritt 3: Grenzwerte & Schutz",
+        "description": "Feinjustierung der Mähbedingungen für Rasengesundheit, Mindesttemperatur und Tierschutz.",
+        "data": {
+          "dew_spread_min": "Min. Taupunktspreizung (°C für trockenen Rasen)",
+          "min_temp": "Minimale Mäh-Temperatur (°C, schützt vor Kälteschäden)",
+          "heat_limit": "Hitzeschutz-Grenze (°C, schützt vor Rasenbrand)",
+          "moisture_threshold": "Nässe-Schwellenwert (pts, unterhalb gilt als trocken)",
+          "radar_rain_buffer": "Regenradar-Vorlaufzeit (Minuten bis Regen)",
+          "wildlife_enabled": "Igelschutz aktiv (kein Mähen bei Dämmerung & Nacht)",
+          "wildlife_sunrise_offset": "Wartezeit nach Sonnenaufgang (Minuten)",
+          "wildlife_sunset_offset": "Vorlaufzeit vor Sonnenuntergang (Minuten)",
+          "quiet_hours_start": "Beginn der Ruhezeit",
+          "quiet_hours_end": "Ende der Ruhezeit"
+        }
+      },
+      "pro_mower": {
+        "title": "Schritt 4: Mähzeiten, Akku & Kantenmähen",
+        "description": "Flächenleistung, Zyklussteuerung und markenspezifische Befehle.",
+        "data": {
+          "mower_capacity": "Flächenleistung des Mähers (m²/h)",
+          "min_battery_level": "Mindest-Akkustand für Start (%)",
+          "max_run_time": "Max. Laufzeit pro Ausfahrt (Minuten, 0 = Akku leer)",
+          "multi_cycle": "Mehrfach-Zyklen erlauben (nach Laden weiterfahren)",
+          "edge_cut_interval": "Kantenschnitt-Intervall (jeder N-te Start, 0 = aus)",
+          "edge_cut_service": "Eigener Dienst für Kantenschnitt (z.B. landroid_cloud.ots)",
+          "edge_cut_data": "Zusätzliche Dienstdaten (JSON)"
         }
       }
     },
@@ -27,13 +75,17 @@
         }
       },
       "sensors": {
-        "title": "Lokale Sensoren (Optional)",
-        "description": "Ersetze Standard-Wetterwerte durch deine eigene Wetterstation oder Bodenfeuchte-Sensoren.",
+        "title": "Lokale Sensoren & Feuchtequellen",
+        "description": "Ersetze Standard-Wetterwerte durch deine eigene Wetterstation oder binde vorhandene Rasen-Nässe-Scores und Hardware-Regensensoren ein.",
         "data": {
           "sensor_temp": "Lokaler Außentemperatur-Sensor",
           "sensor_humidity": "Lokaler Luftfeuchtigkeits-Sensor",
+          "sensor_dew_point": "Taupunkt-Sensor (z.B. DWD oder Wetterstation)",
+          "sensor_moisture_score": "Vorhandener Rasen Nässe-Score (z.B. input_number.rasen_naesse_score)",
+          "sensor_mower_rain": "Mäher-Hardware-Regensensor (z.B. binary_sensor.bobbi_regensensor)",
           "sensor_rain": "Regensensor / Niederschlagsrate",
           "sensor_rain_radar": "Regenradar-Sensor (z.B. DWD nächster Regen)",
+          "sensor_solar_diff": "Sonnensensor Differenztemperatur (z.B. Homematic Ch3)",
           "sensor_solar": "Sonneneinstrahlung (W/m² oder Lux)",
           "sensor_wind": "Windgeschwindigkeit (km/h)",
           "sensor_soil": "Bodenfeuchte-Sensor (%)",
@@ -42,10 +94,13 @@
       },
       "thresholds": {
         "title": "Grenzwerte & Schutzregeln",
-        "description": "Feinjustierung der Mähbedingungen für Rasengesundheit und Tierschutz.",
+        "description": "Feinjustierung der Mähbedingungen für Rasengesundheit, Mindesttemperatur und Tierschutz.",
         "data": {
           "dew_spread_min": "Min. Taupunktspreizung (°C für trockenen Rasen)",
+          "min_temp": "Minimale Mäh-Temperatur (°C, schützt vor Kälteschäden)",
           "heat_limit": "Hitzeschutz-Grenze (°C, schützt vor Rasenbrand)",
+          "moisture_threshold": "Nässe-Schwellenwert (pts, unterhalb gilt als trocken)",
+          "radar_rain_buffer": "Regenradar-Vorlaufzeit (Minuten bis Regen)",
           "wildlife_enabled": "Igelschutz aktiv (kein Mähen bei Dämmerung & Nacht)",
           "wildlife_sunrise_offset": "Wartezeit nach Sonnenaufgang (Minuten)",
           "wildlife_sunset_offset": "Vorlaufzeit vor Sonnenuntergang (Minuten)",
@@ -55,7 +110,7 @@
       },
       "mower_management": {
         "title": "Mähzeiten, Akku & Kantenmähen",
-        "description": "Flächenleistung, Zyklussteuerung und Markenspezifische Features.",
+        "description": "Flächenleistung, Zyklussteuerung und markenspezifische Features.",
         "data": {
           "mower_capacity": "Flächenleistung des Mähers (m²/h)",
           "min_battery_level": "Mindest-Akkustand für Start (%)",
@@ -79,11 +134,17 @@
       "heat_blocked": {
         "name": "Hitzeschutz aktiv"
       },
+      "cold_blocked": {
+        "name": "Kälteschutz aktiv"
+      },
       "wildlife_blocked": {
         "name": "Igelschutz aktiv"
       },
       "quiet_hours_blocked": {
         "name": "Ruhezeit aktiv"
+      },
+      "seasonal_time_blocked": {
+        "name": "Herbst-Morgenblockade"
       }
     },
     "sensor": {
@@ -96,8 +157,17 @@
       "dew_spread": {
         "name": "Taupunktspreizung"
       },
+      "dew_point": {
+        "name": "Taupunkt"
+      },
       "moisture_score": {
         "name": "Rasenfeuchte Score"
+      },
+      "drying_rate": {
+        "name": "Rasen Abtrocknungsrate"
+      },
+      "wetting_rate": {
+        "name": "Rasen Befeuchtungsrate"
       },
       "remaining_budget": {
         "name": "Verbleibende Mähzeit heute"

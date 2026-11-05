@@ -32,7 +32,10 @@ async def async_setup_entry(
             MowUrgencySensor(coordinator),
             GrowthIndexSensor(coordinator),
             DewSpreadSensor(coordinator),
+            DewPointSensor(coordinator),
             LawnMoistureScoreSensor(coordinator),
+            DryingRateSensor(coordinator),
+            WettingRateSensor(coordinator),
             DailyBudgetRemainingSensor(coordinator),
             MowedMinutesTodaySensor(coordinator),
             DaysSinceFertilizedSensor(coordinator),
@@ -131,25 +134,45 @@ class DewSpreadSensor(MowMasterBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return dew point spread."""
-        moisture = self.coordinator.data.get("moisture_status")
-        return moisture.dew_spread if moisture else None
+        return self.coordinator.data.get("dew_spread")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return dew point and status description."""
         moisture = self.coordinator.data.get("moisture_status")
         return {
-            "dew_point_c": moisture.dew_point if moisture else None,
+            "dew_point_c": self.coordinator.data.get("dew_point"),
             "status_description": moisture.state_description if moisture else None,
         }
 
 
+class DewPointSensor(MowMasterBaseSensor):
+    """Reports calculated or measured dew point."""
+
+    _attr_name = "Taupunkt"
+    _attr_translation_key = "dew_point"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer-water"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_dew_point"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return dew point."""
+        return self.coordinator.data.get("dew_point")
+
+
 class LawnMoistureScoreSensor(MowMasterBaseSensor):
-    """Reports estimated surface wetness score (0 = dry, 100 = soaked)."""
+    """Reports lawn moisture balance score (0 = dry, 100 = soaked)."""
 
     _attr_name = "Rasenfeuchte Score"
     _attr_translation_key = "moisture_score"
-    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = "pts"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-percent"
 
@@ -171,7 +194,49 @@ class LawnMoistureScoreSensor(MowMasterBaseSensor):
         return {
             "is_dry": moisture.is_dry if moisture else None,
             "surface_state": moisture.state_description if moisture else None,
+            "drying_rate_ptsh": self.coordinator.data.get("drying_rate"),
+            "wetting_rate_ptsh": self.coordinator.data.get("wetting_rate"),
         }
+
+
+class DryingRateSensor(MowMasterBaseSensor):
+    """Reports surface drying speed based on sun, wind and vapor pressure deficit."""
+
+    _attr_name = "Rasen Abtrocknungsrate"
+    _attr_translation_key = "drying_rate"
+    _attr_native_unit_of_measurement = "pts/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-sunset-up"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_drying_rate"
+
+    @property
+    def native_value(self) -> float:
+        """Return drying rate."""
+        return float(self.coordinator.data.get("drying_rate", 0.0))
+
+
+class WettingRateSensor(MowMasterBaseSensor):
+    """Reports surface wetting speed based on rain, fog or night dew."""
+
+    _attr_name = "Rasen Befeuchtungsrate"
+    _attr_translation_key = "wetting_rate"
+    _attr_native_unit_of_measurement = "pts/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-pouring"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_wetting_rate"
+
+    @property
+    def native_value(self) -> float:
+        """Return wetting rate."""
+        return float(self.coordinator.data.get("wetting_rate", 0.0))
 
 
 class DailyBudgetRemainingSensor(MowMasterBaseSensor):

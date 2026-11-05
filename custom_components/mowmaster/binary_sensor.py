@@ -30,8 +30,10 @@ async def async_setup_entry(
             MowPermittedBinarySensor(coordinator),
             RainMoistureBlockedBinarySensor(coordinator),
             HeatBlockedBinarySensor(coordinator),
+            ColdBlockedBinarySensor(coordinator),
             WildlifeBlockedBinarySensor(coordinator),
             QuietHoursBlockedBinarySensor(coordinator),
+            SeasonalTimeBlockedBinarySensor(coordinator),
         ]
     )
 
@@ -81,9 +83,11 @@ class MowPermittedBinarySensor(MowMasterBaseBinarySensor):
         moisture = data.get("moisture_status")
         return {
             "blocking_reasons": data.get("blocking_reasons", []),
-            "dew_spread": moisture.dew_spread if moisture else None,
-            "dew_point": moisture.dew_point if moisture else None,
+            "dew_spread": data.get("dew_spread"),
+            "dew_point": data.get("dew_point"),
             "moisture_score": moisture.moisture_score if moisture else None,
+            "drying_rate": data.get("drying_rate"),
+            "wetting_rate": data.get("wetting_rate"),
             "surface_state": moisture.state_description if moisture else None,
             "growth_index": data.get("growth_index"),
             "daily_target_minutes": data.get("target_daily_minutes"),
@@ -118,7 +122,7 @@ class RainMoistureBlockedBinarySensor(MowMasterBaseBinarySensor):
             "dew_wet": self.coordinator.data.get("dew_blocked", False),
             "moisture_score": moisture.moisture_score if moisture else None,
             "surface_description": moisture.state_description if moisture else None,
-            "dew_spread_c": moisture.dew_spread if moisture else None,
+            "dew_spread_c": self.coordinator.data.get("dew_spread"),
         }
 
 
@@ -146,6 +150,35 @@ class HeatBlockedBinarySensor(MowMasterBaseBinarySensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return temperature details."""
+        return {
+            "current_temperature": self.coordinator.data.get("temperature"),
+        }
+
+
+class ColdBlockedBinarySensor(MowMasterBaseBinarySensor):
+    """Indicates if temperatures are below safe grass cutting threshold."""
+
+    _attr_name = "Kälteschutz aktiv"
+    _attr_translation_key = "cold_blocked"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_cold_blocked"
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if below minimum temperature."""
+        return bool(self.coordinator.data.get("cold_blocked", False))
+
+    @property
+    def icon(self) -> str:
+        """Return icon."""
+        return "mdi:snowflake-alert" if self.is_on else "mdi:thermometer-low"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return current temp."""
         return {
             "current_temperature": self.coordinator.data.get("temperature"),
         }
@@ -193,4 +226,26 @@ class QuietHoursBlockedBinarySensor(MowMasterBaseBinarySensor):
     def icon(self) -> str:
         """Return icon."""
         return "mdi:volume-off" if self.is_on else "mdi:volume-high"
+
+
+class SeasonalTimeBlockedBinarySensor(MowMasterBaseBinarySensor):
+    """Indicates if mowing is blocked due to autumn morning cold or low sun elevation."""
+
+    _attr_name = "Herbst-Morgenblockade"
+    _attr_translation_key = "seasonal_time_blocked"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_seasonal_time_blocked"
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if seasonal morning cold is blocking."""
+        return bool(self.coordinator.data.get("seasonal_time_blocked", False))
+
+    @property
+    def icon(self) -> str:
+        """Return icon."""
+        return "mdi:weather-partly-cloudy" if self.is_on else "mdi:weather-sunny"
 
