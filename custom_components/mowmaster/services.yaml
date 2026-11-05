@@ -1,0 +1,22 @@
+set_fertilized:
+  name: Rasen-Düngung eintragen
+  description: Registriert das Datum der letzten Rasendüngung zur genauen Berechnung des Wachstumsschubs.
+  fields:
+    date:
+      name: Datum
+      description: Datum der Düngung (Standard ist heute).
+      selector:
+        date:
+
+start_mowing:
+  name: Mähvorgang starten
+  description: Startet den Mähroboter unter Berücksichtigung eventuell konfigurierter Kantenschnitt-Dienste.
+
+dock_mower:
+  name: Mähroboter parken
+  description: Ruft den Mähroboter sofort zur Ladestation zurück.
+
+reset_daily_budget:
+  name: Tagesbudget zurücksetzen
+  description: Setzt die heute bereits gemähten Minuten auf 0 zurück.
+

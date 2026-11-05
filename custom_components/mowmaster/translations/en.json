@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MowMaster - Setup",
+        "description": "Configure your robotic lawn mower and weather provider. MowMaster calculates optimal mowing windows and biological growth automatically.",
+        "data": {
+          "mower_entity": "Lawn Mower Entity",
+          "weather_entity": "Weather Provider Entity",
+          "lawn_area": "Lawn Area (m²)",
+          "mower_type": "Navigation Style"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This lawn mower is already configured in MowMaster."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MowMaster Pro Settings",
+        "menu_options": {
+          "sensors": "Local Weather & Soil Sensors",
+          "thresholds": "Thresholds & Protection (Dew, Heat, Wildlife)",
+          "mower_management": "Runtime, Battery & Edge Cutting"
+        }
+      },
+      "sensors": {
+        "title": "Local Sensors (Optional)",
+        "description": "Override standard weather entity data with high-precision local weather station or soil moisture sensors.",
+        "data": {
+          "sensor_temp": "Local Outdoor Temperature Sensor",
+          "sensor_humidity": "Local Humidity Sensor",
+          "sensor_rain": "Rain Gauge / Rain Sensor",
+          "sensor_rain_radar": "Rain Radar Sensor (e.g. Minutes to Rain)",
+          "sensor_solar": "Solar Radiation (W/m² or Lux)",
+          "sensor_wind": "Wind Speed (km/h)",
+          "sensor_soil": "Soil Moisture Sensor (%)",
+          "sensor_battery": "Separate Battery Sensor (if not in mower)"
+        }
+      },
+      "thresholds": {
+        "title": "Thresholds & Protection Rules",
+        "description": "Fine-tune environmental conditions for lawn health and animal welfare.",
+        "data": {
+          "dew_spread_min": "Min Dew Spread (°C for dry grass)",
+          "heat_limit": "Heat Protection Limit (°C, prevents lawn burn)",
+          "wildlife_enabled": "Hedgehog Protection Active (no night/dusk mowing)",
+          "wildlife_sunrise_offset": "Delay After Sunrise (minutes)",
+          "wildlife_sunset_offset": "Lead Time Before Sunset (minutes)",
+          "quiet_hours_start": "Quiet Hours Start",
+          "quiet_hours_end": "Quiet Hours End"
+        }
+      },
+      "mower_management": {
+        "title": "Mowing Runtime, Battery & Edge Cutting",
+        "description": "Area capacity, cycle management and brand-specific commands.",
+        "data": {
+          "mower_capacity": "Mower Efficiency (m²/h)",
+          "min_battery_level": "Minimum Start Battery Level (%)",
+          "max_run_time": "Max Runtime per Session (minutes, 0 = until battery low)",
+          "multi_cycle": "Allow Multiple Cycles (resume after recharge)",
+          "edge_cut_interval": "Edge Trimming Interval (every N runs, 0 = off)",
+          "edge_cut_service": "Custom Edge Cut Service (e.g. landroid_cloud.ots)",
+          "edge_cut_data": "Custom Service Data (JSON)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "mowing_permitted": {
+        "name": "Mowing Permitted"
+      },
+      "rain_moisture_blocked": {
+        "name": "Moisture & Rain Blocked"
+      },
+      "heat_blocked": {
+        "name": "Heat Protection Active"
+      },
+      "wildlife_blocked": {
+        "name": "Wildlife Protection Active"
+      },
+      "quiet_hours_blocked": {
+        "name": "Quiet Hours Active"
+      }
+    },
+    "sensor": {
+      "mow_urgency": {
+        "name": "Mowing Urgency"
+      },
+      "growth_index": {
+        "name": "Growth Index"
+      },
+      "dew_spread": {
+        "name": "Dew Point Spread"
+      },
+      "moisture_score": {
+        "name": "Lawn Moisture Score"
+      },
+      "remaining_budget": {
+        "name": "Remaining Mowing Time Today"
+      },
+      "mowed_today": {
+        "name": "Mowed Time Today"
+      },
+      "days_since_fertilized": {
+        "name": "Days Since Fertilization"
+      }
+    },
+    "switch": {
+      "auto_mow": {
+        "name": "Autonomous Mowing Control"
+      },
+      "edge_cut_next": {
+        "name": "Next Run: Edge Trim"
+      }
+    },
+    "button": {
+      "mark_fertilized": {
+        "name": "Mark Fertilized Today"
+      },
+      "start_mow_now": {
+        "name": "Start Mowing Now"
+      },
+      "dock_mower": {
+        "name": "Send Mower to Dock"
+      },
+      "reset_daily_budget": {
+        "name": "Reset Daily Mowed Time"
+      }
+    }
+  }
+}
+

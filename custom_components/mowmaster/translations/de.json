@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MowMaster - Grundeinrichtung",
+        "description": "Konfiguriere deinen Mähroboter und deine Wetterquelle. MowMaster berechnet automatisch den optimalen Zeitpunkt und Mähbedarf.",
+        "data": {
+          "mower_entity": "Mähroboter-Entität",
+          "weather_entity": "Wetterdienst-Entität",
+          "lawn_area": "Rasenfläche (m²)",
+          "mower_type": "Navigationsprinzip des Mähers"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dieser Mähroboter ist bereits in MowMaster konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MowMaster Pro-Einstellungen",
+        "menu_options": {
+          "sensors": "Lokale Wetter- & Bodensensoren",
+          "thresholds": "Grenzwerte & Schutz (Taupunkt, Hitze, Igel)",
+          "mower_management": "Laufzeit, Akku & Kantenmähen"
+        }
+      },
+      "sensors": {
+        "title": "Lokale Sensoren (Optional)",
+        "description": "Ersetze Standard-Wetterwerte durch deine eigene Wetterstation oder Bodenfeuchte-Sensoren.",
+        "data": {
+          "sensor_temp": "Lokaler Außentemperatur-Sensor",
+          "sensor_humidity": "Lokaler Luftfeuchtigkeits-Sensor",
+          "sensor_rain": "Regensensor / Niederschlagsrate",
+          "sensor_rain_radar": "Regenradar-Sensor (z.B. DWD nächster Regen)",
+          "sensor_solar": "Sonneneinstrahlung (W/m² oder Lux)",
+          "sensor_wind": "Windgeschwindigkeit (km/h)",
+          "sensor_soil": "Bodenfeuchte-Sensor (%)",
+          "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
+        }
+      },
+      "thresholds": {
+        "title": "Grenzwerte & Schutzregeln",
+        "description": "Feinjustierung der Mähbedingungen für Rasengesundheit und Tierschutz.",
+        "data": {
+          "dew_spread_min": "Min. Taupunktspreizung (°C für trockenen Rasen)",
+          "heat_limit": "Hitzeschutz-Grenze (°C, schützt vor Rasenbrand)",
+          "wildlife_enabled": "Igelschutz aktiv (kein Mähen bei Dämmerung & Nacht)",
+          "wildlife_sunrise_offset": "Wartezeit nach Sonnenaufgang (Minuten)",
+          "wildlife_sunset_offset": "Vorlaufzeit vor Sonnenuntergang (Minuten)",
+          "quiet_hours_start": "Beginn der Ruhezeit",
+          "quiet_hours_end": "Ende der Ruhezeit"
+        }
+      },
+      "mower_management": {
+        "title": "Mähzeiten, Akku & Kantenmähen",
+        "description": "Flächenleistung, Zyklussteuerung und Markenspezifische Features.",
+        "data": {
+          "mower_capacity": "Flächenleistung des Mähers (m²/h)",
+          "min_battery_level": "Mindest-Akkustand für Start (%)",
+          "max_run_time": "Max. Laufzeit pro Ausfahrt (Minuten, 0 = Akku leer)",
+          "multi_cycle": "Mehrfach-Zyklen erlauben (nach Laden weiterfahren)",
+          "edge_cut_interval": "Kantenschnitt-Intervall (jeder N-te Start, 0 = aus)",
+          "edge_cut_service": "Eigener Dienst für Kantenschnitt (z.B. landroid_cloud.ots)",
+          "edge_cut_data": "Zusätzliche Dienstdaten (JSON)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "mowing_permitted": {
+        "name": "Mähfreigabe"
+      },
+      "rain_moisture_blocked": {
+        "name": "Nässe- & Regenblockade"
+      },
+      "heat_blocked": {
+        "name": "Hitzeschutz aktiv"
+      },
+      "wildlife_blocked": {
+        "name": "Igelschutz aktiv"
+      },
+      "quiet_hours_blocked": {
+        "name": "Ruhezeit aktiv"
+      }
+    },
+    "sensor": {
+      "mow_urgency": {
+        "name": "Mähdringlichkeit"
+      },
+      "growth_index": {
+        "name": "Wachstumsindex"
+      },
+      "dew_spread": {
+        "name": "Taupunktspreizung"
+      },
+      "moisture_score": {
+        "name": "Rasenfeuchte Score"
+      },
+      "remaining_budget": {
+        "name": "Verbleibende Mähzeit heute"
+      },
+      "mowed_today": {
+        "name": "Gemähte Zeit heute"
+      },
+      "days_since_fertilized": {
+        "name": "Tage seit Düngung"
+      }
+    },
+    "switch": {
+      "auto_mow": {
+        "name": "Autonome Mähsteuerung"
+      },
+      "edge_cut_next": {
+        "name": "Nächster Start: Kantenschnitt"
+      }
+    },
+    "button": {
+      "mark_fertilized": {
+        "name": "Rasen heute gedüngt"
+      },
+      "start_mow_now": {
+        "name": "Mähvorgang jetzt starten"
+      },
+      "dock_mower": {
+        "name": "Mäher zur Ladestation senden"
+      },
+      "reset_daily_budget": {
+        "name": "Tagesmähzeit zurücksetzen"
+      }
+    }
+  }
+}
+
