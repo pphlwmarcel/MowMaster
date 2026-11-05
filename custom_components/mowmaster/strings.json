@@ -145,6 +145,9 @@
       },
       "seasonal_time_blocked": {
         "name": "Herbst-Morgenblockade"
+      },
+      "growth_dormant_blocked": {
+        "name": "Kein Mähbedarf / Winterruhe"
       }
     },
     "sensor": {
@@ -203,4 +206,3 @@
     }
   }
 }
-

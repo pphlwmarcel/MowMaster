@@ -1,7 +1,7 @@
 """Calculation engine for MowMaster.
 
-Contains meteorological, biological growth (GDD), physical lawn surface moisture
-(drying rate vs wetting rate balance), and slot-evaluation algorithms for autonomous robot mowers.
+Contains meteorological, astronomical location-based photoperiod, biological growth (GDD),
+physical lawn surface moisture, and slot-evaluation algorithms for autonomous robot mowers.
 """
 from __future__ import annotations
 
@@ -55,7 +55,70 @@ class SlotEvaluation:
     quiet_hours_blocked: bool = False
     battery_blocked: bool = False
     seasonal_time_blocked: bool = False
+    growth_dormant_blocked: bool = False
     urgency_score: int = 0  # 0 to 100%
+
+
+def calculate_photoperiod(latitude: float, day_of_year: int) -> tuple[float, float]:
+    """Calculate astronomical daylight hours and seasonal trend based on latitude and day of year.
+
+    Returns (daylight_hours, seasonal_trend).
+    seasonal_trend > 0: Days are lengthening (Spring approaching Summer).
+    seasonal_trend < 0: Days are shortening (Summer heading into Autumn/Winter).
+    Works globally for Northern, Southern and Equatorial hemispheres.
+    """
+    lat_rad = math.radians(latitude)
+
+    # Solar declination angle (Cooper 1969)
+    declination = 23.45 * math.sin(math.radians((360.0 / 365.0) * (day_of_year - 81)))
+    dec_rad = math.radians(declination)
+
+    # Seasonal trend: positive when approaching peak summer, negative when approaching winter
+    hemisphere_sign = 1.0 if latitude >= 0 else -1.0
+    seasonal_trend = math.cos(math.radians((360.0 / 365.0) * (day_of_year - 81))) * hemisphere_sign
+
+    val = -math.tan(lat_rad) * math.tan(dec_rad)
+    if val >= 1.0:
+        daylight_hours = 0.0  # Polar night
+    elif val <= -1.0:
+        daylight_hours = 24.0  # Polar day
+    else:
+        hour_angle = math.acos(val)
+        daylight_hours = (24.0 / math.pi) * hour_angle
+
+    return round(daylight_hours, 2), seasonal_trend
+
+
+def calculate_seasonal_growth_factor(latitude: float, day_of_year: int) -> tuple[float, float]:
+    """Calculate biological turfgrass seasonal growth factor based on latitude-dependent photoperiod.
+
+    Works dynamically for any location worldwide:
+    - In Central Europe / North America: Summer in June/July, Winter in December/January.
+    - In Australia / New Zealand / South Africa: Summer in December/January, Winter in June/July.
+    - At the Equator: Steady year-round photoperiod.
+    Returns (season_factor, daylight_hours).
+    """
+    daylight, trend = calculate_photoperiod(latitude, day_of_year)
+
+    if daylight <= 8.5:
+        factor = 0.0
+    elif daylight <= 10.0:
+        factor = (daylight - 8.5) / 1.5 * 0.15
+    elif daylight <= 12.0:
+        factor = 0.15 + ((daylight - 10.0) / 2.0) * 0.65
+    elif daylight <= 14.5:
+        factor = 0.80 + ((daylight - 12.0) / 2.5) * 0.45
+    else:
+        factor = min(1.35, 1.25 + (daylight - 14.5) * 0.05)
+
+    # Phenological spring surge vs autumn dormancy allocation
+    if trend > 0:
+        factor *= 1.10
+    else:
+        factor *= 0.85
+
+    season_factor = round(max(0.0, min(1.4, factor)), 2)
+    return season_factor, daylight
 
 
 def calculate_dew_point(temperature_c: float, humidity_percent: float) -> float:
@@ -85,7 +148,7 @@ def calculate_drying_rate(
     weather_condition: str | None = None,
     sun_elevation: float = 0.0,
     sun_below_horizon: bool = False,
-    now_month: int = 5,
+    daylight_hours: float = 12.0,
 ) -> float:
     """Calculate lawn surface drying rate (pts/h) using physical energy balance."""
     cond = (weather_condition or "").lower()
@@ -126,10 +189,10 @@ def calculate_drying_rate(
 
     sun_boost = raw_sun * elev_factor
 
-    # Seasonal adjustment factor (lower sun intensity and shorter daylight in autumn/winter)
-    if now_month in [10, 11, 12, 1, 2]:
+    # Location-based photoperiod drying factor
+    if daylight_hours <= 10.0:
         season_factor = 0.65
-    elif now_month in [3, 9]:
+    elif daylight_hours <= 12.0:
         season_factor = 0.85
     else:
         season_factor = 1.0
@@ -214,13 +277,21 @@ def calculate_soil_factor(soil_moisture_percent: float | None) -> float:
 
 def calculate_growth_index(
     gdd: float,
+    latitude: float = 50.0,
+    day_of_year: int = 135,
     fertilizer_factor: float = 1.0,
     soil_factor: float = 1.0,
-) -> float:
-    """Combine GDD, fertilizer, and soil factors into a daily growth index."""
-    base_growth = gdd / 12.0
-    index = base_growth * fertilizer_factor * soil_factor
-    return round(max(0.0, min(3.0, index)), 2)
+) -> tuple[float, float, float]:
+    """Combine GDD, location-based photoperiod season factor, fertilizer, and soil factors.
+
+    Calculates exact season factor from latitude and day of year for any location worldwide.
+    Returns (growth_index, season_factor, daylight_hours).
+    """
+    base_growth = gdd / 10.0
+    season_factor, daylight_hours = calculate_seasonal_growth_factor(latitude, day_of_year)
+    index = base_growth * season_factor * fertilizer_factor * soil_factor
+    growth_index = round(max(0.0, min(3.0, index)), 2)
+    return growth_index, season_factor, daylight_hours
 
 
 def calculate_daily_target_minutes(
@@ -229,7 +300,13 @@ def calculate_daily_target_minutes(
     growth_index: float,
     custom_capacity_m2h: float | None = None,
 ) -> int:
-    """Calculate the target mowing duration (minutes) for today."""
+    """Calculate the target mowing duration (minutes) for today.
+
+    In peak season (growth_index = 1.0), a robot mower should cover the entire lawn
+    approximately 2.5 times per week (distributed over the week).
+    In late autumn / winter (growth_index < 0.15), grass growth is negligible (< 15 min),
+    resulting in 0 minutes mowing time.
+    """
     area = max(10.0, float(lawn_area_m2))
 
     if custom_capacity_m2h and custom_capacity_m2h > 5.0:
@@ -239,12 +316,25 @@ def calculate_daily_target_minutes(
     else:
         capacity = DEFAULT_CAPACITY_CHAOS
 
-    base_hours = area / capacity
+    # Time needed to cut 100% of the lawn once (in hours)
+    full_cut_hours = area / capacity
 
-    if growth_index < 0.1:
+    # Weekly mowing baseline at growth_index = 1.0:
+    # Systematic mowers: ~1.8 cuts per week
+    # Chaos mowers: ~2.5 cuts per week (due to random overlap)
+    cuts_per_week = 1.8 if mower_type == MOWER_TYPE_SYSTEMATIC else 2.5
+    weekly_hours = full_cut_hours * cuts_per_week
+
+    # Daily minutes at growth_index = 1.0
+    daily_base_minutes = (weekly_hours * 60.0) / 7.0
+
+    # Scale dynamically by biological growth rate
+    target_minutes = round(daily_base_minutes * growth_index)
+
+    # If target is less than 15 minutes, cutting is not worthwhile/needed
+    if target_minutes < 15:
         return 0
 
-    target_minutes = round(base_hours * 60.0 * growth_index)
     return max(0, min(720, target_minutes))
 
 
@@ -281,6 +371,8 @@ def evaluate_slot(
     sunset: datetime | None = None,
     sun_elevation: float = 10.0,
     sun_above_horizon: bool = True,
+    growth_index: float = 1.0,
+    daylight_hours: float = 12.0,
     # Thresholds
     dew_spread_threshold: float = DEFAULT_DEW_SPREAD_MIN,
     min_temp: float = DEFAULT_MIN_TEMP,
@@ -304,7 +396,7 @@ def evaluate_slot(
         rain_blocked = True
         blocking_reasons.append("rain_active")
 
-    # Rain Radar imminent warning (checks minutes to rain or radar forecast sum)
+    # Rain Radar imminent warning
     if rain_radar_sum is not None and rain_radar_sum >= 0.2:
         rain_blocked = True
         blocking_reasons.append("rain_radar_approaching")
@@ -332,19 +424,24 @@ def evaluate_slot(
     if heat_blocked:
         blocking_reasons.append("heat_limit_exceeded")
 
-    # 5. Seasonal Daylight Window (Autumn midday requirement & sun above horizon)
+    # 5. Location-Based Photoperiod Morning Window
+    # If daylight hours are short (< 11h), mornings are cold and dewy: delay start until 12:00.
     seasonal_blocked = False
     if not sun_above_horizon:
         seasonal_blocked = True
         blocking_reasons.append("sun_below_horizon")
     else:
-        # In autumn (Sep, Oct, Nov) grass needs until at least 10:00 or 12:00 to warm up
-        req_hour = 12 if now.month in [9, 10, 11] else 10
+        req_hour = 12 if daylight_hours < 11.0 else 10
         if now.hour < req_hour:
             seasonal_blocked = True
             blocking_reasons.append("seasonal_morning_cold")
 
-    # 6. Wildlife Protection Check (Hedgehog / Igelschutz)
+    # 6. Biological Growth Dormancy Check
+    growth_dormant = (growth_index < 0.05) or (remaining_minutes_today <= 0)
+    if growth_dormant:
+        blocking_reasons.append("growth_dormant")
+
+    # 7. Wildlife Protection Check (Hedgehog / Igelschutz)
     wildlife_blocked = False
     if wildlife_enabled and sunrise and sunset:
         import datetime as dt_module
@@ -356,12 +453,12 @@ def evaluate_slot(
             wildlife_blocked = True
             blocking_reasons.append("wildlife_protection")
 
-    # 7. Quiet Hours Check
+    # 8. Quiet Hours Check
     quiet_blocked = is_time_in_range(now.time(), quiet_start, quiet_end)
     if quiet_blocked:
         blocking_reasons.append("quiet_hours")
 
-    # 8. Battery Level Check
+    # 9. Battery Level Check
     battery_blocked = False
     if battery_level is not None and battery_level < min_battery:
         battery_blocked = True
@@ -372,7 +469,7 @@ def evaluate_slot(
 
     # Urgency Score calculation (0 - 100%)
     urgency = 0
-    if remaining_minutes_today > 0:
+    if remaining_minutes_today > 0 and growth_index >= 0.05:
         base_urgency = min(80, int((remaining_minutes_today / 120.0) * 50))
         if is_permitted:
             urgency = min(100, base_urgency + 30)
@@ -390,6 +487,6 @@ def evaluate_slot(
         quiet_hours_blocked=quiet_blocked,
         battery_blocked=battery_blocked,
         seasonal_time_blocked=seasonal_blocked,
+        growth_dormant_blocked=growth_dormant,
         urgency_score=urgency,
     )
-

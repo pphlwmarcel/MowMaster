@@ -145,6 +145,9 @@
       },
       "seasonal_time_blocked": {
         "name": "Seasonal Morning Cold Active"
+      },
+      "growth_dormant_blocked": {
+        "name": "Dormant / No Mowing Needed"
       }
     },
     "sensor": {
@@ -203,4 +206,3 @@
     }
   }
 }
-

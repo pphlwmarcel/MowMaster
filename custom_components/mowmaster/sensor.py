@@ -89,7 +89,7 @@ class MowUrgencySensor(MowMasterBaseSensor):
 
 
 class GrowthIndexSensor(MowMasterBaseSensor):
-    """Sensor reporting current biological grass growth index based on GDD and care."""
+    """Sensor reporting current biological grass growth index based on GDD, photoperiod, and care."""
 
     _attr_name = "Wachstumsindex"
     _attr_translation_key = "growth_index"
@@ -109,9 +109,12 @@ class GrowthIndexSensor(MowMasterBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return GDD attributes."""
+        """Return GDD and location photoperiod attributes."""
         return {
             "growing_degree_days": self.coordinator.data.get("gdd"),
+            "season_factor": self.coordinator.data.get("season_factor"),
+            "daylight_hours": self.coordinator.data.get("daylight_hours"),
+            "latitude": self.coordinator.data.get("latitude"),
             "days_since_fertilized": self.coordinator.data.get("days_since_fertilized"),
         }
 
@@ -321,4 +324,3 @@ class DaysSinceFertilizedSensor(MowMasterBaseSensor):
         return {
             "last_fertilized_date": self.coordinator.last_fertilized_date,
         }
-

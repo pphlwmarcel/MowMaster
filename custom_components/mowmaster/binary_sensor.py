@@ -34,6 +34,7 @@ async def async_setup_entry(
             WildlifeBlockedBinarySensor(coordinator),
             QuietHoursBlockedBinarySensor(coordinator),
             SeasonalTimeBlockedBinarySensor(coordinator),
+            GrowthDormantBinarySensor(coordinator),
         ]
     )
 
@@ -249,3 +250,24 @@ class SeasonalTimeBlockedBinarySensor(MowMasterBaseBinarySensor):
         """Return icon."""
         return "mdi:weather-partly-cloudy" if self.is_on else "mdi:weather-sunny"
 
+
+class GrowthDormantBinarySensor(MowMasterBaseBinarySensor):
+    """Indicates if mowing is blocked because grass is dormant / no growth today."""
+
+    _attr_name = "Kein Mähbedarf / Winterruhe"
+    _attr_translation_key = "growth_dormant_blocked"
+
+    def __init__(self, coordinator: MowMasterCoordinator) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_growth_dormant_blocked"
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if grass growth is dormant / budget is 0."""
+        return bool(self.coordinator.data.get("growth_dormant_blocked", False))
+
+    @property
+    def icon(self) -> str:
+        """Return icon."""
+        return "mdi:snowflake-thermometer" if self.is_on else "mdi:sprout"
