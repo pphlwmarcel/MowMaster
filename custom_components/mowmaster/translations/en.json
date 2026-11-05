@@ -2,19 +2,26 @@
   "config": {
     "step": {
       "user": {
-        "title": "MowMaster - Setup",
-        "description": "Configure your robotic lawn mower and weather provider. MowMaster calculates optimal mowing windows and biological growth automatically.",
+        "title": "MowMaster - Initial Setup",
+        "description": "Configure your robotic lawn mower and weather provider. MowMaster calculates optimal mowing windows and biological grass growth automatically.",
         "data": {
           "mower_entity": "Lawn Mower Entity",
           "weather_entity": "Weather Provider Entity",
           "lawn_area": "Lawn Area (m²)",
           "mower_type": "Navigation Style",
-          "configure_pro": "Configure Advanced Pro Settings Now"
+          "configure_pro": "Configure Advanced Pro Settings"
+        },
+        "data_description": {
+          "mower_entity": "Select your robotic lawn mower entity (e.g. lawn_mower.bobbi).",
+          "weather_entity": "Weather integration providing temperature, humidity, and rain forecasts.",
+          "lawn_area": "Total lawn area to mow in square meters.",
+          "mower_type": "Select the navigation principle of your mower.",
+          "configure_pro": "Enable to immediately configure local sensors (weather station, dew point, soil moisture) and custom thresholds."
         }
       },
       "pro_sensors": {
         "title": "Step 2: Local Sensors & Moisture Sources",
-        "description": "Override standard weather entity data with high-precision local weather station, soil moisture sensors or existing lawn wetness scores.",
+        "description": "Override standard weather entity data with high-precision local weather station, soil moisture sensors, or existing lawn wetness scores.",
         "data": {
           "sensor_temp": "Local Outdoor Temperature Sensor",
           "sensor_humidity": "Local Humidity Sensor",
@@ -28,14 +35,28 @@
           "sensor_wind": "Wind Speed (km/h)",
           "sensor_soil": "Soil Moisture Sensor (%)",
           "sensor_battery": "Separate Battery Sensor (if not in mower)"
+        },
+        "data_description": {
+          "sensor_temp": "Local high-precision outdoor temperature for GDD growth and frost protection.",
+          "sensor_humidity": "Local relative humidity for dew point calculations.",
+          "sensor_dew_point": "Direct dew point sensor for high accuracy dew tracking.",
+          "sensor_moisture_score": "Optional existing moisture score entity (0-100 pts).",
+          "sensor_mower_rain": "Hardware rain sensor on the mower body for instant abort.",
+          "sensor_rain": "Local rain gauge for precipitation tracking in mm.",
+          "sensor_rain_radar": "Next rain arrival forecast sensor for anticipatory docking.",
+          "sensor_solar_diff": "Sun vs shade differential temperature sensor for rapid surface drying detection.",
+          "sensor_solar": "Solar irradiance or illuminance sensor.",
+          "sensor_wind": "Wind speed sensor for evapotranspiration modeling.",
+          "sensor_soil": "Soil moisture sensor to track irrigation and drought conditions.",
+          "sensor_battery": "Battery level entity if not integrated in the mower entity."
         }
       },
       "pro_thresholds": {
         "title": "Step 3: Thresholds & Protection Rules",
         "description": "Fine-tune environmental conditions for lawn health, minimum temperature, and wildlife protection.",
         "data": {
-          "dew_spread_min": "Min Dew Spread (°C for dry grass)",
-          "min_temp": "Minimum Mowing Temperature (°C, protects turf against cold)",
+          "dew_spread_min": "Min. Dew Spread (°C for dry grass)",
+          "min_temp": "Minimum Mowing Temperature (°C, turf frost protection)",
           "heat_limit": "Heat Protection Limit (°C, prevents lawn burn)",
           "moisture_threshold": "Wetness Score Threshold (pts, below is dry)",
           "radar_rain_buffer": "Rain Radar Lead Time (minutes to rain)",
@@ -44,21 +65,46 @@
           "wildlife_sunset_offset": "Lead Time Before Sunset (minutes)",
           "quiet_hours_start": "Quiet Hours Start",
           "quiet_hours_end": "Quiet Hours End"
+        },
+        "data_description": {
+          "dew_spread_min": "Difference between ambient temperature and dew point. Above 2.5°C to 3.0°C grass is dry of dew.",
+          "min_temp": "Below this temperature mowing is prohibited to prevent cold-stress damage to grass blades.",
+          "heat_limit": "Above this temperature mowing is paused to protect fragile heat-stressed turf.",
+          "moisture_threshold": "Threshold under which the lawn is considered dry enough to mow (default 3.0 pts).",
+          "radar_rain_buffer": "Lead time in minutes before rain starts to send the mower back home safely.",
+          "wildlife_enabled": "Protects hedgehogs and nocturnal animals by keeping the mower docked from dusk till dawn.",
+          "wildlife_sunrise_offset": "Minutes to wait after sunrise before mowing can begin.",
+          "wildlife_sunset_offset": "Minutes before sunset by which the mower must return to the dock.",
+          "quiet_hours_start": "Start time of nighttime noise restriction (e.g. 20:00).",
+          "quiet_hours_end": "End time of nighttime noise restriction (e.g. 08:00)."
         }
       },
       "pro_mower": {
         "title": "Step 4: Mowing Runtime, Battery & Edge Cutting",
-        "description": "Area capacity, cycle management and brand-specific commands.",
+        "description": "Mowing capacity, multi-cycle scheduling, and brand-specific edge trimming.",
         "data": {
-          "mower_capacity": "Mower Efficiency (m²/h)",
-          "min_battery_level": "Minimum Start Battery Level (%)",
+          "mower_capacity": "Mower Cutting Capacity (m²/h)",
+          "min_battery_level": "Minimum Battery Level for Start (%)",
           "max_run_time": "Max Runtime per Session (minutes, 0 = until battery low)",
-          "multi_cycle": "Allow Multiple Cycles (resume after recharge)",
-          "edge_cut_interval": "Edge Trimming Interval (every N runs, 0 = off)",
+          "multi_cycle": "Allow Multiple Cycles (continue after recharge)",
+          "edge_cut_interval": "Edge Trim Interval (every N runs, 0 = off)",
           "edge_cut_service": "Custom Edge Cut Service (e.g. landroid_cloud.ots)",
           "edge_cut_data": "Custom Service Data (JSON)"
+        },
+        "data_description": {
+          "mower_capacity": "Net area coverage in m²/h (~50 m²/h for random bounce, ~120 m²/h for RTK/systematic).",
+          "min_battery_level": "Minimum battery charge before MowMaster issues a start command.",
+          "max_run_time": "Maximum runtime in minutes for a single run (0 = run until mower returns by battery level).",
+          "multi_cycle": "Allows the mower to make additional runs after recharging if daily target budget is not yet met.",
+          "edge_cut_interval": "Triggers edge trimming every N runs (e.g. 3 = every 3rd run).",
+          "edge_cut_service": "Optional Home Assistant service call for brand-specific boundary/edge cut.",
+          "edge_cut_data": "Optional JSON parameters passed to the edge cut service call."
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to lawn mower.",
+      "unknown": "An unexpected error occurred."
     },
     "abort": {
       "already_configured": "This lawn mower is already configured in MowMaster."
@@ -68,15 +114,16 @@
     "step": {
       "init": {
         "title": "MowMaster Pro Settings",
+        "description": "Select the configuration category to adjust:",
         "menu_options": {
-          "sensors": "Local Weather & Soil Sensors",
+          "sensors": "Local Sensors & Moisture Sources",
           "thresholds": "Thresholds & Protection (Dew, Heat, Wildlife)",
           "mower_management": "Runtime, Battery & Edge Cutting"
         }
       },
       "sensors": {
         "title": "Local Sensors & Moisture Sources",
-        "description": "Override standard weather entity data with high-precision local weather station, soil moisture sensors or existing lawn wetness scores.",
+        "description": "Override standard weather entity data with high-precision local weather station, soil moisture sensors, or existing lawn wetness scores.",
         "data": {
           "sensor_temp": "Local Outdoor Temperature Sensor",
           "sensor_humidity": "Local Humidity Sensor",
@@ -90,14 +137,28 @@
           "sensor_wind": "Wind Speed (km/h)",
           "sensor_soil": "Soil Moisture Sensor (%)",
           "sensor_battery": "Separate Battery Sensor (if not in mower)"
+        },
+        "data_description": {
+          "sensor_temp": "Local high-precision outdoor temperature for GDD growth and frost protection.",
+          "sensor_humidity": "Local relative humidity for dew point calculations.",
+          "sensor_dew_point": "Direct dew point sensor for high accuracy dew tracking.",
+          "sensor_moisture_score": "Optional existing moisture score entity (0-100 pts).",
+          "sensor_mower_rain": "Hardware rain sensor on the mower body for instant abort.",
+          "sensor_rain": "Local rain gauge for precipitation tracking in mm.",
+          "sensor_rain_radar": "Next rain arrival forecast sensor for anticipatory docking.",
+          "sensor_solar_diff": "Sun vs shade differential temperature sensor for rapid surface drying detection.",
+          "sensor_solar": "Solar irradiance or illuminance sensor.",
+          "sensor_wind": "Wind speed sensor for evapotranspiration modeling.",
+          "sensor_soil": "Soil moisture sensor to track irrigation and drought conditions.",
+          "sensor_battery": "Battery level entity if not integrated in the mower entity."
         }
       },
       "thresholds": {
         "title": "Thresholds & Protection Rules",
         "description": "Fine-tune environmental conditions for lawn health, minimum temperature, and wildlife protection.",
         "data": {
-          "dew_spread_min": "Min Dew Spread (°C for dry grass)",
-          "min_temp": "Minimum Mowing Temperature (°C, protects turf against cold)",
+          "dew_spread_min": "Min. Dew Spread (°C for dry grass)",
+          "min_temp": "Minimum Mowing Temperature (°C, turf frost protection)",
           "heat_limit": "Heat Protection Limit (°C, prevents lawn burn)",
           "moisture_threshold": "Wetness Score Threshold (pts, below is dry)",
           "radar_rain_buffer": "Rain Radar Lead Time (minutes to rain)",
@@ -106,21 +167,74 @@
           "wildlife_sunset_offset": "Lead Time Before Sunset (minutes)",
           "quiet_hours_start": "Quiet Hours Start",
           "quiet_hours_end": "Quiet Hours End"
+        },
+        "data_description": {
+          "dew_spread_min": "Difference between ambient temperature and dew point. Above 2.5°C to 3.0°C grass is dry of dew.",
+          "min_temp": "Below this temperature mowing is prohibited to prevent cold-stress damage to grass blades.",
+          "heat_limit": "Above this temperature mowing is paused to protect fragile heat-stressed turf.",
+          "moisture_threshold": "Threshold under which the lawn is considered dry enough to mow (default 3.0 pts).",
+          "radar_rain_buffer": "Lead time in minutes before rain starts to send the mower back home safely.",
+          "wildlife_enabled": "Protects hedgehogs and nocturnal animals by keeping the mower docked from dusk till dawn.",
+          "wildlife_sunrise_offset": "Minutes to wait after sunrise before mowing can begin.",
+          "wildlife_sunset_offset": "Minutes before sunset by which the mower must return to the dock.",
+          "quiet_hours_start": "Start time of nighttime noise restriction (e.g. 20:00).",
+          "quiet_hours_end": "End time of nighttime noise restriction (e.g. 08:00)."
         }
       },
       "mower_management": {
         "title": "Mowing Runtime, Battery & Edge Cutting",
-        "description": "Area capacity, cycle management and brand-specific commands.",
+        "description": "Mowing capacity, multi-cycle scheduling, and brand-specific edge trimming.",
         "data": {
-          "mower_capacity": "Mower Efficiency (m²/h)",
-          "min_battery_level": "Minimum Start Battery Level (%)",
+          "mower_capacity": "Mower Cutting Capacity (m²/h)",
+          "min_battery_level": "Minimum Battery Level for Start (%)",
           "max_run_time": "Max Runtime per Session (minutes, 0 = until battery low)",
-          "multi_cycle": "Allow Multiple Cycles (resume after recharge)",
-          "edge_cut_interval": "Edge Trimming Interval (every N runs, 0 = off)",
+          "multi_cycle": "Allow Multiple Cycles (continue after recharge)",
+          "edge_cut_interval": "Edge Trim Interval (every N runs, 0 = off)",
           "edge_cut_service": "Custom Edge Cut Service (e.g. landroid_cloud.ots)",
           "edge_cut_data": "Custom Service Data (JSON)"
+        },
+        "data_description": {
+          "mower_capacity": "Net area coverage in m²/h (~50 m²/h for random bounce, ~120 m²/h for RTK/systematic).",
+          "min_battery_level": "Minimum battery charge before MowMaster issues a start command.",
+          "max_run_time": "Maximum runtime in minutes for a single run (0 = run until mower returns by battery level).",
+          "multi_cycle": "Allows the mower to make additional runs after recharging if daily target budget is not yet met.",
+          "edge_cut_interval": "Triggers edge trimming every N runs (e.g. 3 = every 3rd run).",
+          "edge_cut_service": "Optional Home Assistant service call for brand-specific boundary/edge cut.",
+          "edge_cut_data": "Optional JSON parameters passed to the edge cut service call."
         }
       }
+    }
+  },
+  "selector": {
+    "mower_type": {
+      "options": {
+        "chaos": "Chaos / Boundary Wire (Standard)",
+        "systematic": "Systematic Lanes (RTK / LiDAR / Camera)"
+      }
+    }
+  },
+  "services": {
+    "set_fertilized": {
+      "name": "Record Fertilization",
+      "description": "Records the date when lawn was fertilized to calculate the biological growth boost.",
+      "fields": {
+        "date": {
+          "name": "Date",
+          "description": "Date of fertilization (defaults to today)."
+        }
+      }
+    },
+    "start_mowing": {
+      "name": "Start Mowing",
+      "description": "Dispatches mower honoring configured edge trim settings."
+    },
+    "dock_mower": {
+      "name": "Park Mower",
+      "description": "Sends mower directly back to the charging station."
+    },
+    "reset_daily_budget": {
+      "name": "Reset Daily Budget",
+      "description": "Resets mowed minutes today to zero."
     }
   },
   "entity": {
@@ -129,7 +243,7 @@
         "name": "Mowing Permitted"
       },
       "rain_moisture_blocked": {
-        "name": "Moisture & Rain Blocked"
+        "name": "Rain & Moisture Blocked"
       },
       "heat_blocked": {
         "name": "Heat Protection Active"
@@ -144,10 +258,10 @@
         "name": "Quiet Hours Active"
       },
       "seasonal_time_blocked": {
-        "name": "Seasonal Morning Cold Active"
+        "name": "Seasonal Morning Delay"
       },
       "growth_dormant_blocked": {
-        "name": "Dormant / No Mowing Needed"
+        "name": "No Mowing Needed / Dormant"
       }
     },
     "sensor": {
@@ -158,7 +272,7 @@
         "name": "Growth Index"
       },
       "dew_spread": {
-        "name": "Dew Point Spread"
+        "name": "Dew Spread"
       },
       "dew_point": {
         "name": "Dew Point"
@@ -179,7 +293,7 @@
         "name": "Mowed Time Today"
       },
       "days_since_fertilized": {
-        "name": "Days Since Fertilization"
+        "name": "Days Since Fertilized"
       }
     },
     "switch": {
@@ -192,16 +306,16 @@
     },
     "button": {
       "mark_fertilized": {
-        "name": "Mark Fertilized Today"
+        "name": "Lawn Fertilized Today"
       },
       "start_mow_now": {
         "name": "Start Mowing Now"
       },
       "dock_mower": {
-        "name": "Send Mower to Dock"
+        "name": "Dock Mower"
       },
       "reset_daily_budget": {
-        "name": "Reset Daily Mowed Time"
+        "name": "Reset Daily Budget"
       }
     }
   }

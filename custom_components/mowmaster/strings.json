@@ -9,7 +9,14 @@
           "weather_entity": "Wetterdienst-Entität",
           "lawn_area": "Rasenfläche (m²)",
           "mower_type": "Navigationsprinzip des Mähers",
-          "configure_pro": "Erweiterte Pro-Einstellungen jetzt konfigurieren"
+          "configure_pro": "Erweiterte Pro-Einstellungen konfigurieren"
+        },
+        "data_description": {
+          "mower_entity": "Wähle deine Mähroboter-Entität (z.B. lawn_mower.bobbi).",
+          "weather_entity": "Wetterdienst für Temperatur-, Feuchte- und Niederschlagsvorhersagen.",
+          "lawn_area": "Gesamte zu mähende Rasenfläche in Quadratmetern.",
+          "mower_type": "Wähle das Navigationsprinzip deines Mähroboters.",
+          "configure_pro": "Aktivieren, um direkt im Anschluss Sensoren (Wetterstation, Taupunkt, Bodenfeuchte) und Grenzwerte einzurichten."
         }
       },
       "pro_sensors": {
@@ -28,6 +35,20 @@
           "sensor_wind": "Windgeschwindigkeit (km/h)",
           "sensor_soil": "Bodenfeuchte-Sensor (%)",
           "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
+        },
+        "data_description": {
+          "sensor_temp": "Hochpräzise lokale Temperatur für Wachstumsindex und Kälteschutz.",
+          "sensor_humidity": "Lokale relative Luftfeuchtigkeit zur Taupunktberechnung.",
+          "sensor_dew_point": "Direkter Taupunktsensor für präzise Tauabtrocknung.",
+          "sensor_moisture_score": "Optionaler bestehender Nässe-Score (0-100 pts).",
+          "sensor_mower_rain": "Hardware-Regensensor des Mähers für sofortigen Abbruch.",
+          "sensor_rain": "Lokaler Regenmesser für millimetergenaue Niederschlagserfassung.",
+          "sensor_rain_radar": "Vorhersage des nächsten Regens zur vorausschauenden Rückkehr.",
+          "sensor_solar_diff": "Differenztemperatursensor (Sonne vs. Schatten) zur Erkennung schneller Rasenabtrocknung.",
+          "sensor_solar": "Globalstrahlung oder Helligkeit zur Berechnung der Sonneneinstrahlung.",
+          "sensor_wind": "Windgeschwindigkeit zur Berechnung der Verdunstungsrate.",
+          "sensor_soil": "Bodenfeuchte zur Berücksichtigung von Bewässerung oder Trockenheit.",
+          "sensor_battery": "Akkustand-Sensor, falls nicht über die Mähroboter-Entität gemeldet."
         }
       },
       "pro_thresholds": {
@@ -44,6 +65,18 @@
           "wildlife_sunset_offset": "Vorlaufzeit vor Sonnenuntergang (Minuten)",
           "quiet_hours_start": "Beginn der Ruhezeit",
           "quiet_hours_end": "Ende der Ruhezeit"
+        },
+        "data_description": {
+          "dew_spread_min": "Differenz zwischen Temperatur und Taupunkt. Ab 2.5°C bis 3.0°C gilt der Rasen als taugetrocknet.",
+          "min_temp": "Unterhalb dieser Temperatur wird nicht gemäht, um Kälteschäden an Halmen zu vermeiden.",
+          "heat_limit": "Oberhalb dieser Temperatur wird der Mähvorgang pausiert, um Austrocknung zu verhindern.",
+          "moisture_threshold": "Unterhalb dieses Nässe-Scores (Standard 3.0) gilt der Rasen als mähbar trocken.",
+          "radar_rain_buffer": "Vorlaufzeit in Minuten, um den Mäher vor einsetzendem Regen rechtzeitig nach Hause zu schicken.",
+          "wildlife_enabled": "Verhindert Mähfahrten nachts sowie kurz nach Sonnenaufgang und vor Sonnenuntergang zum Schutz von Kleintieren.",
+          "wildlife_sunrise_offset": "Wartezeit in Minuten nach Sonnenaufgang, bevor frühestens gemäht werden darf.",
+          "wildlife_sunset_offset": "Vorlaufzeit in Minuten vor Sonnenuntergang, ab der der Mäher in der Station bleiben muss.",
+          "quiet_hours_start": "Uhrzeit, ab der die Nachtruhe gilt (z.B. 20:00).",
+          "quiet_hours_end": "Uhrzeit, bis zu der die Nachtruhe gilt (z.B. 08:00)."
         }
       },
       "pro_mower": {
@@ -57,8 +90,21 @@
           "edge_cut_interval": "Kantenschnitt-Intervall (jeder N-te Start, 0 = aus)",
           "edge_cut_service": "Eigener Dienst für Kantenschnitt (z.B. landroid_cloud.ots)",
           "edge_cut_data": "Zusätzliche Dienstdaten (JSON)"
+        },
+        "data_description": {
+          "mower_capacity": "Netto-Flächenleistung in m²/h (Standard ~50 m²/h für Chaos-Mäher, ~120 m²/h für Bahnenmäher).",
+          "min_battery_level": "Mindest-Akkuladung, bevor MowMaster einen Startbefehl erteilt.",
+          "max_run_time": "Maximale Dauer einer Einzelausfahrt in Minuten (0 bedeutet: Mäher fährt bis zur Akkugrenze).",
+          "multi_cycle": "Erlaubt dem Mäher, nach dem Zwischenladen am selben Tag weiterzumähen, bis das Tagesbudget erfüllt ist.",
+          "edge_cut_interval": "Startet jeden N-ten Mähzyklus als Kantenschnitt (z.B. 3 = jede 3. Ausfahrt).",
+          "edge_cut_service": "Optionaler Home Assistant Dienst für herstellerspezifischen Kantenschnitt.",
+          "edge_cut_data": "Optionale Parameter als JSON für den Kantenschnitt-Dienst."
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Mähroboter fehlgeschlagen.",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
     },
     "abort": {
       "already_configured": "Dieser Mähroboter ist bereits in MowMaster konfiguriert."
@@ -68,8 +114,9 @@
     "step": {
       "init": {
         "title": "MowMaster Pro-Einstellungen",
+        "description": "Wähle einen Bereich, den du anpassen möchtest:",
         "menu_options": {
-          "sensors": "Lokale Wetter- & Bodensensoren",
+          "sensors": "Lokale Sensoren & Rasenfeuchte",
           "thresholds": "Grenzwerte & Schutz (Taupunkt, Hitze, Igel)",
           "mower_management": "Laufzeit, Akku & Kantenmähen"
         }
@@ -90,6 +137,20 @@
           "sensor_wind": "Windgeschwindigkeit (km/h)",
           "sensor_soil": "Bodenfeuchte-Sensor (%)",
           "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
+        },
+        "data_description": {
+          "sensor_temp": "Hochpräzise lokale Temperatur für Wachstumsindex und Kälteschutz.",
+          "sensor_humidity": "Lokale relative Luftfeuchtigkeit zur Taupunktberechnung.",
+          "sensor_dew_point": "Direkter Taupunktsensor für präzise Tauabtrocknung.",
+          "sensor_moisture_score": "Optionaler bestehender Nässe-Score (0-100 pts).",
+          "sensor_mower_rain": "Hardware-Regensensor des Mähers für sofortigen Abbruch.",
+          "sensor_rain": "Lokaler Regenmesser für millimetergenaue Niederschlagserfassung.",
+          "sensor_rain_radar": "Vorhersage des nächsten Regens zur vorausschauenden Rückkehr.",
+          "sensor_solar_diff": "Differenztemperatursensor (Sonne vs. Schatten) zur Erkennung schneller Rasenabtrocknung.",
+          "sensor_solar": "Globalstrahlung oder Helligkeit zur Berechnung der Sonneneinstrahlung.",
+          "sensor_wind": "Windgeschwindigkeit zur Berechnung der Verdunstungsrate.",
+          "sensor_soil": "Bodenfeuchte zur Berücksichtigung von Bewässerung oder Trockenheit.",
+          "sensor_battery": "Akkustand-Sensor, falls nicht über die Mähroboter-Entität gemeldet."
         }
       },
       "thresholds": {
@@ -106,6 +167,18 @@
           "wildlife_sunset_offset": "Vorlaufzeit vor Sonnenuntergang (Minuten)",
           "quiet_hours_start": "Beginn der Ruhezeit",
           "quiet_hours_end": "Ende der Ruhezeit"
+        },
+        "data_description": {
+          "dew_spread_min": "Differenz zwischen Temperatur und Taupunkt. Ab 2.5°C bis 3.0°C gilt der Rasen als taugetrocknet.",
+          "min_temp": "Unterhalb dieser Temperatur wird nicht gemäht, um Kälteschäden an Halmen zu vermeiden.",
+          "heat_limit": "Oberhalb dieser Temperatur wird der Mähvorgang pausiert, um Austrocknung zu verhindern.",
+          "moisture_threshold": "Unterhalb dieses Nässe-Scores (Standard 3.0) gilt der Rasen als mähbar trocken.",
+          "radar_rain_buffer": "Vorlaufzeit in Minuten, um den Mäher vor einsetzendem Regen rechtzeitig nach Hause zu schicken.",
+          "wildlife_enabled": "Verhindert Mähfahrten nachts sowie kurz nach Sonnenaufgang und vor Sonnenuntergang zum Schutz von Kleintieren.",
+          "wildlife_sunrise_offset": "Wartezeit in Minuten nach Sonnenaufgang, bevor frühestens gemäht werden darf.",
+          "wildlife_sunset_offset": "Vorlaufzeit in Minuten vor Sonnenuntergang, ab der der Mäher in der Station bleiben muss.",
+          "quiet_hours_start": "Uhrzeit, ab der die Nachtruhe gilt (z.B. 20:00).",
+          "quiet_hours_end": "Uhrzeit, bis zu der die Nachtruhe gilt (z.B. 08:00)."
         }
       },
       "mower_management": {
@@ -119,8 +192,49 @@
           "edge_cut_interval": "Kantenschnitt-Intervall (jeder N-te Start, 0 = aus)",
           "edge_cut_service": "Eigener Dienst für Kantenschnitt (z.B. landroid_cloud.ots)",
           "edge_cut_data": "Zusätzliche Dienstdaten (JSON)"
+        },
+        "data_description": {
+          "mower_capacity": "Netto-Flächenleistung in m²/h (Standard ~50 m²/h für Chaos-Mäher, ~120 m²/h für Bahnenmäher).",
+          "min_battery_level": "Mindest-Akkuladung, bevor MowMaster einen Startbefehl erteilt.",
+          "max_run_time": "Maximale Dauer einer Einzelausfahrt in Minuten (0 bedeutet: Mäher fährt bis zur Akkugrenze).",
+          "multi_cycle": "Erlaubt dem Mäher, nach dem Zwischenladen am selben Tag weiterzumähen, bis das Tagesbudget erfüllt ist.",
+          "edge_cut_interval": "Startet jeden N-ten Mähzyklus als Kantenschnitt (z.B. 3 = jede 3. Ausfahrt).",
+          "edge_cut_service": "Optionaler Home Assistant Dienst für herstellerspezifischen Kantenschnitt.",
+          "edge_cut_data": "Optionale Parameter als JSON für den Kantenschnitt-Dienst."
         }
       }
+    }
+  },
+  "selector": {
+    "mower_type": {
+      "options": {
+        "chaos": "Chaos-Prinzip / Begrenzungskabel (Standard)",
+        "systematic": "Systematisch in Bahnen (RTK / LiDAR / Kamera)"
+      }
+    }
+  },
+  "services": {
+    "set_fertilized": {
+      "name": "Rasen-Düngung eintragen",
+      "description": "Registriert das Datum der letzten Rasendüngung zur genauen Berechnung des Wachstumsschubs.",
+      "fields": {
+        "date": {
+          "name": "Datum",
+          "description": "Datum der Düngung (Standard ist heute)."
+        }
+      }
+    },
+    "start_mowing": {
+      "name": "Mähvorgang starten",
+      "description": "Startet den Mähroboter unter Berücksichtigung eventuell konfigurierter Kantenschnitt-Dienste."
+    },
+    "dock_mower": {
+      "name": "Mähroboter parken",
+      "description": "Ruft den Mähroboter sofort zur Ladestation zurück."
+    },
+    "reset_daily_budget": {
+      "name": "Tagesbudget zurücksetzen",
+      "description": "Setzt die heute bereits gemähten Minuten auf 0 zurück."
     }
   },
   "entity": {

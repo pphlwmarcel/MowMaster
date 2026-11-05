@@ -63,7 +63,6 @@ class MowMasterBaseSensor(CoordinatorEntity[MowMasterCoordinator], SensorEntity)
 class MowUrgencySensor(MowMasterBaseSensor):
     """Sensor indicating current mowing urgency percentage."""
 
-    _attr_name = "Mähdringlichkeit"
     _attr_translation_key = "mow_urgency"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -91,7 +90,6 @@ class MowUrgencySensor(MowMasterBaseSensor):
 class GrowthIndexSensor(MowMasterBaseSensor):
     """Sensor reporting current biological grass growth index based on GDD, photoperiod, and care."""
 
-    _attr_name = "Wachstumsindex"
     _attr_translation_key = "growth_index"
     _attr_native_unit_of_measurement = "x"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -122,7 +120,6 @@ class GrowthIndexSensor(MowMasterBaseSensor):
 class DewSpreadSensor(MowMasterBaseSensor):
     """Reports dew point spread (T - T_dew) indicating grass surface dry-off."""
 
-    _attr_name = "Taupunktspreizung"
     _attr_translation_key = "dew_spread"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -152,7 +149,6 @@ class DewSpreadSensor(MowMasterBaseSensor):
 class DewPointSensor(MowMasterBaseSensor):
     """Reports calculated or measured dew point."""
 
-    _attr_name = "Taupunkt"
     _attr_translation_key = "dew_point"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -173,7 +169,6 @@ class DewPointSensor(MowMasterBaseSensor):
 class LawnMoistureScoreSensor(MowMasterBaseSensor):
     """Reports lawn moisture balance score (0 = dry, 100 = soaked)."""
 
-    _attr_name = "Rasenfeuchte Score"
     _attr_translation_key = "moisture_score"
     _attr_native_unit_of_measurement = "pts"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -205,7 +200,6 @@ class LawnMoistureScoreSensor(MowMasterBaseSensor):
 class DryingRateSensor(MowMasterBaseSensor):
     """Reports surface drying speed based on sun, wind and vapor pressure deficit."""
 
-    _attr_name = "Rasen Abtrocknungsrate"
     _attr_translation_key = "drying_rate"
     _attr_native_unit_of_measurement = "pts/h"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -225,7 +219,6 @@ class DryingRateSensor(MowMasterBaseSensor):
 class WettingRateSensor(MowMasterBaseSensor):
     """Reports surface wetting speed based on rain, fog or night dew."""
 
-    _attr_name = "Rasen Befeuchtungsrate"
     _attr_translation_key = "wetting_rate"
     _attr_native_unit_of_measurement = "pts/h"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -245,7 +238,6 @@ class WettingRateSensor(MowMasterBaseSensor):
 class DailyBudgetRemainingSensor(MowMasterBaseSensor):
     """Remaining target mowing duration for today in minutes."""
 
-    _attr_name = "Verbleibende Mähzeit heute"
     _attr_translation_key = "remaining_budget"
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
@@ -274,7 +266,6 @@ class DailyBudgetRemainingSensor(MowMasterBaseSensor):
 class MowedMinutesTodaySensor(MowMasterBaseSensor):
     """Minutes already mowed today."""
 
-    _attr_name = "Gemähte Zeit heute"
     _attr_translation_key = "mowed_today"
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
@@ -302,7 +293,6 @@ class MowedMinutesTodaySensor(MowMasterBaseSensor):
 class DaysSinceFertilizedSensor(MowMasterBaseSensor):
     """Days elapsed since lawn was fertilized."""
 
-    _attr_name = "Tage seit Düngung"
     _attr_translation_key = "days_since_fertilized"
     _attr_native_unit_of_measurement = "d"
     _attr_state_class = SensorStateClass.MEASUREMENT

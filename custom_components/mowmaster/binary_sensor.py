@@ -59,7 +59,6 @@ class MowMasterBaseBinarySensor(CoordinatorEntity[MowMasterCoordinator], BinaryS
 class MowPermittedBinarySensor(MowMasterBaseBinarySensor):
     """Master binary sensor indicating whether mowing is currently safe and permitted."""
 
-    _attr_name = "Mähfreigabe"
     _attr_translation_key = "mowing_permitted"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -99,7 +98,6 @@ class MowPermittedBinarySensor(MowMasterBaseBinarySensor):
 class RainMoistureBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates whether rain or wet grass is currently blocking mowing."""
 
-    _attr_name = "Nässe- & Regenblockade"
     _attr_translation_key = "rain_moisture_blocked"
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
 
@@ -130,7 +128,6 @@ class RainMoistureBlockedBinarySensor(MowMasterBaseBinarySensor):
 class HeatBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if heat protection is currently active to avoid lawn damage."""
 
-    _attr_name = "Hitzeschutz aktiv"
     _attr_translation_key = "heat_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -159,7 +156,6 @@ class HeatBlockedBinarySensor(MowMasterBaseBinarySensor):
 class ColdBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if temperatures are below safe grass cutting threshold."""
 
-    _attr_name = "Kälteschutz aktiv"
     _attr_translation_key = "cold_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -188,7 +184,6 @@ class ColdBlockedBinarySensor(MowMasterBaseBinarySensor):
 class WildlifeBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if wildlife (hedgehog) protection window is currently active."""
 
-    _attr_name = "Igelschutz aktiv"
     _attr_translation_key = "wildlife_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -210,7 +205,6 @@ class WildlifeBlockedBinarySensor(MowMasterBaseBinarySensor):
 class QuietHoursBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if quiet hours curfew is active."""
 
-    _attr_name = "Ruhezeit aktiv"
     _attr_translation_key = "quiet_hours_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -232,7 +226,6 @@ class QuietHoursBlockedBinarySensor(MowMasterBaseBinarySensor):
 class SeasonalTimeBlockedBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if mowing is blocked due to autumn morning cold or low sun elevation."""
 
-    _attr_name = "Herbst-Morgenblockade"
     _attr_translation_key = "seasonal_time_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -254,7 +247,6 @@ class SeasonalTimeBlockedBinarySensor(MowMasterBaseBinarySensor):
 class GrowthDormantBinarySensor(MowMasterBaseBinarySensor):
     """Indicates if mowing is blocked because grass is dormant / no growth today."""
 
-    _attr_name = "Kein Mähbedarf / Winterruhe"
     _attr_translation_key = "growth_dormant_blocked"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:

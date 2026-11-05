@@ -363,16 +363,8 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Required(CONF_MOWER_TYPE, default=DEFAULT_MOWER_TYPE): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value=MOWER_TYPE_CHAOS,
-                                label="Chaos-Prinzip / Begrenzungskabel (Standard)",
-                            ),
-                            selector.SelectOptionDict(
-                                value=MOWER_TYPE_SYSTEMATIC,
-                                label="Systematisch in Bahnen (RTK / LiDAR / Kamera)",
-                            ),
-                        ],
+                        options=[MOWER_TYPE_CHAOS, MOWER_TYPE_SYSTEMATIC],
+                        translation_key="mower_type",
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),

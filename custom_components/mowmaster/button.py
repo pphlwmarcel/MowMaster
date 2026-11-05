@@ -50,7 +50,6 @@ class MowMasterBaseButton(CoordinatorEntity[MowMasterCoordinator], ButtonEntity)
 class MarkFertilizedButton(MowMasterBaseButton):
     """Button to mark today as the fertilization date."""
 
-    _attr_name = "Rasen heute gedüngt"
     _attr_translation_key = "mark_fertilized"
     _attr_icon = "mdi:shaping-polygon"
 
@@ -67,7 +66,6 @@ class MarkFertilizedButton(MowMasterBaseButton):
 class StartMowingNowButton(MowMasterBaseButton):
     """Button to trigger mower start immediately."""
 
-    _attr_name = "Mähvorgang jetzt starten"
     _attr_translation_key = "start_mow_now"
     _attr_icon = "mdi:play-circle-outline"
 
@@ -84,7 +82,6 @@ class StartMowingNowButton(MowMasterBaseButton):
 class DockMowerButton(MowMasterBaseButton):
     """Button to send mower back to charging station."""
 
-    _attr_name = "Mäher zur Ladestation senden"
     _attr_translation_key = "dock_mower"
     _attr_icon = "mdi:home-import-outline"
 
@@ -101,7 +98,6 @@ class DockMowerButton(MowMasterBaseButton):
 class ResetDailyBudgetButton(MowMasterBaseButton):
     """Button to reset today's mowed minutes."""
 
-    _attr_name = "Tagesmähzeit zurücksetzen"
     _attr_translation_key = "reset_daily_budget"
     _attr_icon = "mdi:restore"
 

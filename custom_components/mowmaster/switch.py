@@ -50,7 +50,6 @@ class MowMasterBaseSwitch(CoordinatorEntity[MowMasterCoordinator], SwitchEntity)
 class AutoMowSwitch(MowMasterBaseSwitch):
     """Switch to toggle autonomous dispatch and recall of the mower."""
 
-    _attr_name = "Autonome Mähsteuerung"
     _attr_translation_key = "auto_mow"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
@@ -80,7 +79,6 @@ class AutoMowSwitch(MowMasterBaseSwitch):
 class EdgeCutNextSwitch(MowMasterBaseSwitch):
     """Switch to force edge trimming during the next mowing start."""
 
-    _attr_name = "Nächster Start: Kantenschnitt"
     _attr_translation_key = "edge_cut_next"
 
     def __init__(self, coordinator: MowMasterCoordinator) -> None:
