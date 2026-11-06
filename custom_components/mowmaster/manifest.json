@@ -1,13 +1,13 @@
 {
   "domain": "mowmaster",
   "name": "MowMaster",
-  "codeowners": ["@marcel"],
+  "codeowners": ["@pphlwmarcel"],
   "config_flow": true,
   "dependencies": ["weather", "lawn_mower"],
-  "documentation": "https://github.com/marcel/mowmaster",
+  "documentation": "https://github.com/pphlwmarcel/MowMaster",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/marcel/mowmaster/issues",
-  "version": "1.0.0"
+  "issue_tracker": "https://github.com/pphlwmarcel/MowMaster/issues",
+  "version": "0.2.1"
 }
 
