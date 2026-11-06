@@ -67,6 +67,8 @@ Gibt das Mähen (`binary_sensor.<name>_mowing_permitted`) nur frei, wenn alle Sc
    * **Navigationsprinzip:** *Chaos-Prinzip / Begrenzungskabel* ($\approx 50\,\text{m}^2/\text{h}$) oder *Systematisch in Bahnen (RTK / LiDAR / Kamera)* ($\approx 120\,\text{m}^2/\text{h}$)
    * **Rasen wird im Sommer regelmäßig bewässert:** Verhindert die sommerliche Trockenheits-Drosselung des Wachstumsindex, wenn kein Bodenfeuchtesensor vorhanden ist.
    * **Erweiterte Pro-Einstellungen konfigurieren:** Wenn aktiviert, führt dich der Assistent sofort durch die 3 Experten-Schritte (Sensoren, Grenzwerte, Laufzeit/Kantenschnitt).
+   * **Automatische Sensor-Erkennung (Auto-Discovery):** Begleit-Sensoren deiner Mäher- und Wetter-Integration (z.B. Regensensor des Mähers, Akku-Sensor, DWD-Taupunkt, DWD-Regenradar, Niederschlag und Wind) werden automatisch erkannt, in den Pro-Optionen sichtbar vorausgefüllt und können jederzeit durch eigene lokale Sensoren überschrieben oder geleert werden.
+   * **Flexible Sonnensensor-Unterstützung (Exklusiv-Auswahl):** In den Pro-Optionen kann wahlweise ein **Differenztemperatur-Sensor (°C)** (inkl. frei einstellbarem Schwellenwert ab wann direkte Sonne statt diffuser Bewölkung vorliegt, Standard $10\,^\circ\text{C}$), ein **Solarstrahlungssensor ($\text{W/m}^2$ / Lux)** oder ein **Binärer Sonnensensor (`on`/`off`)** hinterlegt werden.
 4. **Spätere Anpassung:** Über den Button **Konfigurieren** in der Integration können jederzeit alle **Grundeinstellungen** sowie sämtliche **Pro-Optionen** angepasst oder optionale Sensoren wieder entfernt werden.
 
 ---
@@ -82,7 +84,7 @@ Gibt das Mähen (`binary_sensor.<name>_mowing_permitted`) nur frei, wenn alle Sc
 | `binary_sensor.<name>_cold_blocked` | `on`, wenn die Temperatur unter der Mindest-Mähtemperatur (Standard $9\,^\circ\text{C}$) liegt. |
 | `binary_sensor.<name>_wildlife_blocked` | `on`, wenn der Igelschutz (Nacht & Dämmerungspuffer vor Sonnenuntergang / nach Sonnenaufgang) greift. |
 | `binary_sensor.<name>_quiet_hours_blocked` | `on`, während die konfigurierte Ruhezeit (z.B. 20:00–08:00 Uhr) aktiv ist. |
-| `binary_sensor.<name>_seasonal_time_blocked` | `on`, wenn die Sonne unter dem Horizont steht oder an kurzen, kühlen Herbsttagen der Morgen noch zu kalt ist. |
+| `binary_sensor.<name>_seasonal_time_blocked` | `on`, solange die Sonne unter dem Horizont steht (Tageslicht-Blockade vor Sonnenaufgang / nach Sonnenuntergang). |
 | `binary_sensor.<name>_growth_dormant_blocked` | `on`, wenn aufgrund von Kälte oder kurzen Wintertagen aktuell kein biologisches Rasenwachstum stattfindet (Winterruhe). |
 
 ### Sensoren (`sensor`)
@@ -117,7 +119,7 @@ Gibt das Mähen (`binary_sensor.<name>_mowing_permitted`) nur frei, wenn alle Sc
 
 ## 🛠️ Dienste (Services)
 
-MowMaster stellt vier Dienste bereit, die in Skripten, Automationen oder Dashboard-Karten genutzt werden können:
+MowMaster stellt fünf Dienste bereit, die in Skripten, Automationen oder Dashboard-Karten genutzt werden können:
 
 ### 1. `mowmaster.set_fertilized`
 Trägt ein Düngedatum ein (ohne Angabe von `date` wird automatisch das heutige Datum verwendet):
@@ -143,6 +145,14 @@ action: mowmaster.dock_mower
 Setzt die heute gemähte Zeit auf `0` Minuten zurück:
 ```yaml
 action: mowmaster.reset_daily_budget
+```
+
+### 5. `mowmaster.set_moisture_score`
+Kalibriert das interne Rasenfeuchte-Konto manuell (z.B. `0` = komplett trocken, `50` = taunass, `100` = gesättigt):
+```yaml
+action: mowmaster.set_moisture_score
+data:
+  moisture_score: 50
 ```
 
 ---

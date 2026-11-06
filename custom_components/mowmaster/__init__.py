@@ -11,7 +11,7 @@ from homeassistant.const import ATTR_DATE
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN, PLATFORMS
+from .const import ATTR_MOISTURE_SCORE, DOMAIN, PLATFORMS
 from .coordinator import MowMasterCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,17 +20,27 @@ SERVICE_SET_FERTILIZED = "set_fertilized"
 SERVICE_START_MOWING = "start_mowing"
 SERVICE_DOCK_MOWER = "dock_mower"
 SERVICE_RESET_BUDGET = "reset_daily_budget"
+SERVICE_SET_MOISTURE_SCORE = "set_moisture_score"
 
 ALL_SERVICES = (
     SERVICE_SET_FERTILIZED,
     SERVICE_START_MOWING,
     SERVICE_DOCK_MOWER,
     SERVICE_RESET_BUDGET,
+    SERVICE_SET_MOISTURE_SCORE,
 )
 
 SCHEMA_SET_FERTILIZED = vol.Schema(
     {
         vol.Optional(ATTR_DATE): cv.date,
+    }
+)
+
+SCHEMA_SET_MOISTURE_SCORE = vol.Schema(
+    {
+        vol.Required(ATTR_MOISTURE_SCORE): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
     }
 )
 
@@ -80,6 +90,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(coord, MowMasterCoordinator):
                 await coord.async_reset_daily_budget()
 
+    async def handle_set_moisture_score(call: ServiceCall) -> None:
+        """Service call to calibrate internal moisture score."""
+        score = float(call.data[ATTR_MOISTURE_SCORE])
+        for coord in hass.data[DOMAIN].values():
+            if isinstance(coord, MowMasterCoordinator):
+                await coord.async_set_moisture_score(score)
+
     if not hass.services.has_service(DOMAIN, SERVICE_SET_FERTILIZED):
         hass.services.async_register(
             DOMAIN, SERVICE_SET_FERTILIZED, handle_set_fertilized, schema=SCHEMA_SET_FERTILIZED
@@ -90,6 +107,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, SERVICE_DOCK_MOWER, handle_dock_mower)
     if not hass.services.has_service(DOMAIN, SERVICE_RESET_BUDGET):
         hass.services.async_register(DOMAIN, SERVICE_RESET_BUDGET, handle_reset_budget)
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_MOISTURE_SCORE):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_MOISTURE_SCORE,
+            handle_set_moisture_score,
+            schema=SCHEMA_SET_MOISTURE_SCORE,
+        )
 
     return True
 

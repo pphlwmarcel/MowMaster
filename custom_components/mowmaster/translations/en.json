@@ -32,8 +32,9 @@
           "sensor_mower_rain": "Mower Hardware Rain Sensor (e.g. binary_sensor.bobbi_regensensor)",
           "sensor_rain": "Rain Gauge / Rain Sensor",
           "sensor_rain_radar": "Rain Radar Sensor (e.g. DWD Next Rain)",
-          "sensor_solar_diff": "Solar Differencing Temperature Sensor (e.g. Homematic Ch3)",
-          "sensor_solar": "Solar Radiation (W/m² or Lux)",
+          "sensor_solar_diff": "Solar Differential Temperature in °C (e.g. Homematic Ch3)",
+          "sensor_solar": "Solar Radiation in W/m² or Lux (Pyranometer)",
+          "sensor_solar_binary": "Binary Sun Sensor On/Off (e.g. binary_sensor)",
           "sensor_wind": "Wind Speed (km/h)",
           "sensor_soil": "Soil Moisture Sensor (%)",
           "sensor_battery": "Separate Battery Sensor (if not in mower)"
@@ -41,13 +42,14 @@
         "data_description": {
           "sensor_temp": "Local high-precision outdoor temperature for GDD growth and frost protection.",
           "sensor_humidity": "Local relative humidity for dew point calculations.",
-          "sensor_dew_point": "Direct dew point sensor for high accuracy dew tracking.",
-          "sensor_moisture_score": "Optional existing moisture score entity (0-100 pts).",
-          "sensor_mower_rain": "Hardware rain sensor on the mower body for instant abort.",
-          "sensor_rain": "Local rain gauge for precipitation tracking in mm.",
-          "sensor_rain_radar": "Next rain arrival forecast sensor for anticipatory docking.",
-          "sensor_solar_diff": "Sun vs shade differential temperature sensor for rapid surface drying detection.",
-          "sensor_solar": "Solar irradiance or illuminance sensor.",
+          "sensor_dew_point": "Auto-discovered (if available) or custom dew point sensor.",
+          "sensor_moisture_score": "Leave empty for internal MowMaster calculation (recommended) or select external helper.",
+          "sensor_mower_rain": "Auto-discovered (if available) or custom hardware rain sensor on the mower.",
+          "sensor_rain": "Auto-discovered or local rain gauge for precipitation tracking.",
+          "sensor_rain_radar": "Auto-discovered or next rain arrival forecast sensor.",
+          "sensor_solar_diff": "Accuracy: Very High. Sun vs shade differential temperature for continuous solar intensity & night cooling (select only 1 solar source).",
+          "sensor_solar": "Accuracy: High. Solar irradiance in W/m² or Lux (select only 1 solar source).",
+          "sensor_solar_binary": "Accuracy: Medium. Simple On/Off sun sensor scaled by solar elevation (select only 1 solar source).",
           "sensor_wind": "Wind speed sensor for evapotranspiration modeling.",
           "sensor_soil": "Soil moisture sensor to track irrigation and drought conditions.",
           "sensor_battery": "Battery level entity if not integrated in the mower entity."
@@ -58,6 +60,7 @@
         "description": "Fine-tune environmental conditions for lawn health, minimum temperature, and wildlife protection.",
         "data": {
           "dew_spread_min": "Min. Dew Spread (°C for dry grass)",
+          "solar_diff_threshold": "Solar Diff Threshold for Direct Sunshine (°C)",
           "min_temp": "Minimum Mowing Temperature (°C, turf frost protection)",
           "heat_limit": "Heat Protection Limit (°C, prevents lawn burn)",
           "moisture_threshold": "Wetness Score Threshold (pts, below is dry)",
@@ -70,6 +73,7 @@
         },
         "data_description": {
           "dew_spread_min": "Difference between ambient temperature and dew point. Above 2.5°C to 3.0°C grass is dry of dew.",
+          "solar_diff_threshold": "Differential temperature threshold (default 10 °C) above which direct sunshine is active; below is diffuse cloud brightness.",
           "min_temp": "Below this temperature mowing is prohibited to prevent cold-stress damage to grass blades.",
           "heat_limit": "Above this temperature mowing is paused to protect fragile heat-stressed turf.",
           "moisture_threshold": "Threshold under which the lawn is considered dry enough to mow (default 3.0 pts).",
@@ -106,6 +110,7 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to lawn mower.",
+      "multiple_solar_sensors": "Please select only one solar source (differential temperature, radiation W/m², or binary sensor).",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -113,6 +118,9 @@
     }
   },
   "options": {
+    "error": {
+      "multiple_solar_sensors": "Please select only one solar source (differential temperature, radiation W/m², or binary sensor)."
+    },
     "step": {
       "init": {
         "title": "MowMaster Settings",
@@ -144,7 +152,7 @@
       },
       "sensors": {
         "title": "Local Sensors & Moisture Sources",
-        "description": "Override standard weather entity data with high-precision local weather station, soil moisture sensors, or existing lawn wetness scores.",
+        "description": "Auto-discovered companion sensors are pre-filled and can be customized or cleared at any time.",
         "data": {
           "sensor_temp": "Local Outdoor Temperature Sensor",
           "sensor_humidity": "Local Humidity Sensor",
@@ -153,8 +161,9 @@
           "sensor_mower_rain": "Mower Hardware Rain Sensor (e.g. binary_sensor.bobbi_regensensor)",
           "sensor_rain": "Rain Gauge / Rain Sensor",
           "sensor_rain_radar": "Rain Radar Sensor (e.g. DWD Next Rain)",
-          "sensor_solar_diff": "Solar Differencing Temperature Sensor (e.g. Homematic Ch3)",
-          "sensor_solar": "Solar Radiation (W/m² or Lux)",
+          "sensor_solar_diff": "Solar Differential Temperature in °C (e.g. Homematic Ch3)",
+          "sensor_solar": "Solar Radiation in W/m² or Lux (Pyranometer)",
+          "sensor_solar_binary": "Binary Sun Sensor On/Off (e.g. binary_sensor)",
           "sensor_wind": "Wind Speed (km/h)",
           "sensor_soil": "Soil Moisture Sensor (%)",
           "sensor_battery": "Separate Battery Sensor (if not in mower)"
@@ -162,13 +171,14 @@
         "data_description": {
           "sensor_temp": "Local high-precision outdoor temperature for GDD growth and frost protection.",
           "sensor_humidity": "Local relative humidity for dew point calculations.",
-          "sensor_dew_point": "Direct dew point sensor for high accuracy dew tracking.",
-          "sensor_moisture_score": "Optional existing moisture score entity (0-100 pts).",
-          "sensor_mower_rain": "Hardware rain sensor on the mower body for instant abort.",
-          "sensor_rain": "Local rain gauge for precipitation tracking in mm.",
-          "sensor_rain_radar": "Next rain arrival forecast sensor for anticipatory docking.",
-          "sensor_solar_diff": "Sun vs shade differential temperature sensor for rapid surface drying detection.",
-          "sensor_solar": "Solar irradiance or illuminance sensor.",
+          "sensor_dew_point": "Auto-discovered (if available) or custom dew point sensor.",
+          "sensor_moisture_score": "Leave empty for internal MowMaster calculation (recommended) or select external helper.",
+          "sensor_mower_rain": "Auto-discovered (if available) or custom hardware rain sensor on the mower.",
+          "sensor_rain": "Auto-discovered or local rain gauge for precipitation tracking.",
+          "sensor_rain_radar": "Auto-discovered or next rain arrival forecast sensor.",
+          "sensor_solar_diff": "Accuracy: Very High. Sun vs shade differential temperature for continuous solar intensity & night cooling (select only 1 solar source).",
+          "sensor_solar": "Accuracy: High. Solar irradiance in W/m² or Lux (select only 1 solar source).",
+          "sensor_solar_binary": "Accuracy: Medium. Simple On/Off sun sensor scaled by solar elevation (select only 1 solar source).",
           "sensor_wind": "Wind speed sensor for evapotranspiration modeling.",
           "sensor_soil": "Soil moisture sensor to track irrigation and drought conditions.",
           "sensor_battery": "Battery level entity if not integrated in the mower entity."
@@ -179,6 +189,7 @@
         "description": "Fine-tune environmental conditions for lawn health, minimum temperature, and wildlife protection.",
         "data": {
           "dew_spread_min": "Min. Dew Spread (°C for dry grass)",
+          "solar_diff_threshold": "Solar Diff Threshold for Direct Sunshine (°C)",
           "min_temp": "Minimum Mowing Temperature (°C, turf frost protection)",
           "heat_limit": "Heat Protection Limit (°C, prevents lawn burn)",
           "moisture_threshold": "Wetness Score Threshold (pts, below is dry)",
@@ -191,6 +202,7 @@
         },
         "data_description": {
           "dew_spread_min": "Difference between ambient temperature and dew point. Above 2.5°C to 3.0°C grass is dry of dew.",
+          "solar_diff_threshold": "Differential temperature threshold (default 10 °C) above which direct sunshine is active; below is diffuse cloud brightness.",
           "min_temp": "Below this temperature mowing is prohibited to prevent cold-stress damage to grass blades.",
           "heat_limit": "Above this temperature mowing is paused to protect fragile heat-stressed turf.",
           "moisture_threshold": "Threshold under which the lawn is considered dry enough to mow (default 3.0 pts).",
@@ -256,6 +268,16 @@
     "reset_daily_budget": {
       "name": "Reset Daily Budget",
       "description": "Resets mowed minutes today to zero."
+    },
+    "set_moisture_score": {
+      "name": "Set Lawn Moisture Score",
+      "description": "Calibrates or sets the internal lawn moisture score of MowMaster (0.0 to 100.0 pts).",
+      "fields": {
+        "moisture_score": {
+          "name": "Moisture Score",
+          "description": "New value for the internal moisture score (0 to 100 pts)."
+        }
+      }
     }
   },
   "entity": {
@@ -279,7 +301,7 @@
         "name": "Quiet Hours Active"
       },
       "seasonal_time_blocked": {
-        "name": "Seasonal Morning Delay"
+        "name": "Daylight Block (Before Sunrise)"
       },
       "growth_dormant_blocked": {
         "name": "No Mowing Needed / Dormant"

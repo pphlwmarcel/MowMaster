@@ -32,8 +32,9 @@
           "sensor_mower_rain": "Mäher-Hardware-Regensensor (z.B. binary_sensor.bobbi_regensensor)",
           "sensor_rain": "Regensensor / Niederschlagsrate",
           "sensor_rain_radar": "Regenradar-Sensor (z.B. DWD nächster Regen)",
-          "sensor_solar_diff": "Sonnensensor Differenztemperatur (z.B. Homematic Ch3)",
-          "sensor_solar": "Sonneneinstrahlung (W/m² oder Lux)",
+          "sensor_solar_diff": "Sonnensensor Differenztemperatur in °C (z.B. Homematic Ch3)",
+          "sensor_solar": "Sonneneinstrahlung in W/m² oder Lux (Pyranometer)",
+          "sensor_solar_binary": "Binärer Sonnensensor Ja/Nein (z.B. binary_sensor)",
           "sensor_wind": "Windgeschwindigkeit (km/h)",
           "sensor_soil": "Bodenfeuchte-Sensor (%)",
           "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
@@ -41,13 +42,14 @@
         "data_description": {
           "sensor_temp": "Hochpräzise lokale Temperatur für Wachstumsindex und Kälteschutz.",
           "sensor_humidity": "Lokale relative Luftfeuchtigkeit zur Taupunktberechnung.",
-          "sensor_dew_point": "Direkter Taupunktsensor für präzise Tauabtrocknung.",
-          "sensor_moisture_score": "Optionaler bestehender Nässe-Score (0-100 pts).",
-          "sensor_mower_rain": "Hardware-Regensensor des Mähers für sofortigen Abbruch.",
-          "sensor_rain": "Lokaler Regenmesser für millimetergenaue Niederschlagserfassung.",
-          "sensor_rain_radar": "Vorhersage des nächsten Regens zur vorausschauenden Rückkehr.",
-          "sensor_solar_diff": "Differenztemperatursensor (Sonne vs. Schatten) zur Erkennung schneller Rasenabtrocknung.",
-          "sensor_solar": "Globalstrahlung oder Helligkeit zur Berechnung der Sonneneinstrahlung.",
+          "sensor_dew_point": "Automatisch erkannt (sofern vorhanden) oder eigener Taupunktsensor.",
+          "sensor_moisture_score": "Leer lassen für die interne MowMaster-Berechnung (empfohlen) oder externen Helfer wählen.",
+          "sensor_mower_rain": "Automatisch erkannt (sofern vorhanden) oder eigener Hardware-Regensensor des Mähers.",
+          "sensor_rain": "Automatisch erkannt oder lokaler Regenmesser für Niederschlagserfassung.",
+          "sensor_rain_radar": "Automatisch erkannt oder Regenradar-Vorhersagesensor.",
+          "sensor_solar_diff": "Genauigkeit: Sehr hoch. Temperaturdifferenz (Sonne minus Schatten) für stufenlose Sonnenstärke & Nachtausstrahlung (nur 1 Sonnenquelle wählen).",
+          "sensor_solar": "Genauigkeit: Hoch. Globalstrahlung in W/m² oder Lux (nur 1 Sonnenquelle wählen).",
+          "sensor_solar_binary": "Genauigkeit: Mittel. Einfacher Ein/Aus-Sensor ('Sonne scheint'), skaliert über den Sonnenwinkel (nur 1 Sonnenquelle wählen).",
           "sensor_wind": "Windgeschwindigkeit zur Berechnung der Verdunstungsrate.",
           "sensor_soil": "Bodenfeuchte zur Berücksichtigung von Bewässerung oder Trockenheit.",
           "sensor_battery": "Akkustand-Sensor, falls nicht über die Mähroboter-Entität gemeldet."
@@ -58,6 +60,7 @@
         "description": "Feinjustierung der Mähbedingungen für Rasengesundheit, Mindesttemperatur und Tierschutz.",
         "data": {
           "dew_spread_min": "Min. Taupunktspreizung (°C für trockenen Rasen)",
+          "solar_diff_threshold": "Sonnensensor-Schwellenwert für direkte Sonne (°C)",
           "min_temp": "Minimale Mäh-Temperatur (°C, schützt vor Kälteschäden)",
           "heat_limit": "Hitzeschutz-Grenze (°C, schützt vor Rasenbrand)",
           "moisture_threshold": "Nässe-Schwellenwert (pts, unterhalb gilt als trocken)",
@@ -70,6 +73,7 @@
         },
         "data_description": {
           "dew_spread_min": "Differenz zwischen Temperatur und Taupunkt. Ab 2.5°C bis 3.0°C gilt der Rasen als taugetrocknet.",
+          "solar_diff_threshold": "Ab dieser Differenztemperatur (Standard 10 °C) gilt echte direkte Sonneneinstrahlung; darunter ist es nur diffuse Helligkeit bei Bewölkung.",
           "min_temp": "Unterhalb dieser Temperatur wird nicht gemäht, um Kälteschäden an Halmen zu vermeiden.",
           "heat_limit": "Oberhalb dieser Temperatur wird der Mähvorgang pausiert, um Austrocknung zu verhindern.",
           "moisture_threshold": "Unterhalb dieses Nässe-Scores (Standard 3.0) gilt der Rasen als mähbar trocken.",
@@ -106,6 +110,7 @@
     },
     "error": {
       "cannot_connect": "Verbindung zum Mähroboter fehlgeschlagen.",
+      "multiple_solar_sensors": "Bitte wähle nur genau eine Sonnenquelle aus (entweder Differenztemperatur, Strahlung W/m² oder Binär-Sensor).",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten."
     },
     "abort": {
@@ -113,6 +118,9 @@
     }
   },
   "options": {
+    "error": {
+      "multiple_solar_sensors": "Bitte wähle nur genau eine Sonnenquelle aus (entweder Differenztemperatur, Strahlung W/m² oder Binär-Sensor)."
+    },
     "step": {
       "init": {
         "title": "MowMaster Einstellungen",
@@ -144,7 +152,7 @@
       },
       "sensors": {
         "title": "Lokale Sensoren & Feuchtequellen",
-        "description": "Ersetze Standard-Wetterwerte durch deine eigene Wetterstation oder binde vorhandene Rasen-Nässe-Scores und Hardware-Regensensoren ein.",
+        "description": "Automatisch erkannte Sensoren sind bereits vorbelegt und können beliebig überschrieben oder geleert werden.",
         "data": {
           "sensor_temp": "Lokaler Außentemperatur-Sensor",
           "sensor_humidity": "Lokaler Luftfeuchtigkeits-Sensor",
@@ -153,8 +161,9 @@
           "sensor_mower_rain": "Mäher-Hardware-Regensensor (z.B. binary_sensor.bobbi_regensensor)",
           "sensor_rain": "Regensensor / Niederschlagsrate",
           "sensor_rain_radar": "Regenradar-Sensor (z.B. DWD nächster Regen)",
-          "sensor_solar_diff": "Sonnensensor Differenztemperatur (z.B. Homematic Ch3)",
-          "sensor_solar": "Sonneneinstrahlung (W/m² oder Lux)",
+          "sensor_solar_diff": "Sonnensensor Differenztemperatur in °C (z.B. Homematic Ch3)",
+          "sensor_solar": "Sonneneinstrahlung in W/m² oder Lux (Pyranometer)",
+          "sensor_solar_binary": "Binärer Sonnensensor Ja/Nein (z.B. binary_sensor)",
           "sensor_wind": "Windgeschwindigkeit (km/h)",
           "sensor_soil": "Bodenfeuchte-Sensor (%)",
           "sensor_battery": "Separater Akku-Sensor (falls nicht im Mäher)"
@@ -162,13 +171,14 @@
         "data_description": {
           "sensor_temp": "Hochpräzise lokale Temperatur für Wachstumsindex und Kälteschutz.",
           "sensor_humidity": "Lokale relative Luftfeuchtigkeit zur Taupunktberechnung.",
-          "sensor_dew_point": "Direkter Taupunktsensor für präzise Tauabtrocknung.",
-          "sensor_moisture_score": "Optionaler bestehender Nässe-Score (0-100 pts).",
-          "sensor_mower_rain": "Hardware-Regensensor des Mähers für sofortigen Abbruch.",
-          "sensor_rain": "Lokaler Regenmesser für millimetergenaue Niederschlagserfassung.",
-          "sensor_rain_radar": "Vorhersage des nächsten Regens zur vorausschauenden Rückkehr.",
-          "sensor_solar_diff": "Differenztemperatursensor (Sonne vs. Schatten) zur Erkennung schneller Rasenabtrocknung.",
-          "sensor_solar": "Globalstrahlung oder Helligkeit zur Berechnung der Sonneneinstrahlung.",
+          "sensor_dew_point": "Automatisch erkannt (sofern vorhanden) oder eigener Taupunktsensor.",
+          "sensor_moisture_score": "Leer lassen für die interne MowMaster-Berechnung (empfohlen) oder externen Helfer wählen.",
+          "sensor_mower_rain": "Automatisch erkannt (sofern vorhanden) oder eigener Hardware-Regensensor des Mähers.",
+          "sensor_rain": "Automatisch erkannt oder lokaler Regenmesser für Niederschlagserfassung.",
+          "sensor_rain_radar": "Automatisch erkannt oder Regenradar-Vorhersagesensor.",
+          "sensor_solar_diff": "Genauigkeit: Sehr hoch. Temperaturdifferenz (Sonne minus Schatten) für stufenlose Sonnenstärke & Nachtausstrahlung (nur 1 Sonnenquelle wählen).",
+          "sensor_solar": "Genauigkeit: Hoch. Globalstrahlung in W/m² oder Lux (nur 1 Sonnenquelle wählen).",
+          "sensor_solar_binary": "Genauigkeit: Mittel. Einfacher Ein/Aus-Sensor ('Sonne scheint'), skaliert über den Sonnenwinkel (nur 1 Sonnenquelle wählen).",
           "sensor_wind": "Windgeschwindigkeit zur Berechnung der Verdunstungsrate.",
           "sensor_soil": "Bodenfeuchte zur Berücksichtigung von Bewässerung oder Trockenheit.",
           "sensor_battery": "Akkustand-Sensor, falls nicht über die Mähroboter-Entität gemeldet."
@@ -179,6 +189,7 @@
         "description": "Feinjustierung der Mähbedingungen für Rasengesundheit, Mindesttemperatur und Tierschutz.",
         "data": {
           "dew_spread_min": "Min. Taupunktspreizung (°C für trockenen Rasen)",
+          "solar_diff_threshold": "Sonnensensor-Schwellenwert für direkte Sonne (°C)",
           "min_temp": "Minimale Mäh-Temperatur (°C, schützt vor Kälteschäden)",
           "heat_limit": "Hitzeschutz-Grenze (°C, schützt vor Rasenbrand)",
           "moisture_threshold": "Nässe-Schwellenwert (pts, unterhalb gilt als trocken)",
@@ -191,6 +202,7 @@
         },
         "data_description": {
           "dew_spread_min": "Differenz zwischen Temperatur und Taupunkt. Ab 2.5°C bis 3.0°C gilt der Rasen als taugetrocknet.",
+          "solar_diff_threshold": "Ab dieser Differenztemperatur (Standard 10 °C) gilt echte direkte Sonneneinstrahlung; darunter ist es nur diffuse Helligkeit bei Bewölkung.",
           "min_temp": "Unterhalb dieser Temperatur wird nicht gemäht, um Kälteschäden an Halmen zu vermeiden.",
           "heat_limit": "Oberhalb dieser Temperatur wird der Mähvorgang pausiert, um Austrocknung zu verhindern.",
           "moisture_threshold": "Unterhalb dieses Nässe-Scores (Standard 3.0) gilt der Rasen als mähbar trocken.",
@@ -256,6 +268,16 @@
     "reset_daily_budget": {
       "name": "Tagesbudget zurücksetzen",
       "description": "Setzt die heute bereits gemähten Minuten auf 0 zurück."
+    },
+    "set_moisture_score": {
+      "name": "Rasenfeuchte-Score setzen",
+      "description": "Kalibriert oder setzt den internen Rasenfeuchte-Score von MowMaster (0.0 bis 100.0 pts).",
+      "fields": {
+        "moisture_score": {
+          "name": "Nässe-Score",
+          "description": "Neuer Wert für den internen Nässe-Score (0 bis 100 pts)."
+        }
+      }
     }
   },
   "entity": {
@@ -279,7 +301,7 @@
         "name": "Ruhezeit aktiv"
       },
       "seasonal_time_blocked": {
-        "name": "Herbst-Morgenblockade"
+        "name": "Tageslicht-Blockade (Vor Sonnenaufgang)"
       },
       "growth_dormant_blocked": {
         "name": "Kein Mähbedarf / Winterruhe"

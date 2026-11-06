@@ -19,7 +19,9 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
+from .config_flow import discover_companion_sensors
 from .const import (
+    CONF_CLEARED_SENSORS,
     CONF_DEW_SPREAD_MIN,
     CONF_EDGE_CUT_DATA,
     CONF_EDGE_CUT_INTERVAL,
@@ -47,9 +49,11 @@ from .const import (
     CONF_SENSOR_RAIN_RADAR,
     CONF_SENSOR_SOIL,
     CONF_SENSOR_SOLAR,
+    CONF_SENSOR_SOLAR_BINARY,
     CONF_SENSOR_SOLAR_DIFF,
     CONF_SENSOR_TEMP,
     CONF_SENSOR_WIND,
+    CONF_SOLAR_DIFF_THRESHOLD,
     CONF_WEATHER_ENTITY,
     CONF_WILDLIFE_ENABLED,
     CONF_WILDLIFE_SUNRISE_OFFSET,
@@ -65,6 +69,7 @@ from .const import (
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
     DEFAULT_RADAR_RAIN_BUFFER,
+    DEFAULT_SOLAR_DIFF_THRESHOLD,
     DEFAULT_WILDLIFE_SUNRISE,
     DEFAULT_WILDLIFE_SUNSET,
     DOMAIN,
@@ -113,6 +118,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.edge_cut_next: bool = False
         self.auto_mow_enabled: bool = False
         self.internal_moisture_score: float = 0.0
+        self._moisture_initialized: bool = False
         self._last_moisture_update: datetime = dt_util.now()
 
         # Cached forecast & daily observed temperatures
@@ -129,9 +135,26 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_trackers: list[CALLBACK_TYPE] = []
 
     async def async_setup(self) -> None:
-        """Load stored data and register state change listeners."""
+        """Load stored data, auto-discover companion sensors, and register state change listeners."""
         now = dt_util.now()
         today_str = now.date().isoformat()
+
+        # Auto-discover companion sensors and populate options if not already set or cleared
+        discovered = discover_companion_sensors(
+            self.hass,
+            self._get_opt(CONF_MOWER_ENTITY),
+            self._get_opt(CONF_WEATHER_ENTITY),
+        )
+        if discovered:
+            current_opts = dict(self.entry.options)
+            cleared = list(current_opts.get(CONF_CLEARED_SENSORS, []))
+            updated_opts = False
+            for k, v in discovered.items():
+                if k not in current_opts and k not in cleared:
+                    current_opts[k] = v
+                    updated_opts = True
+            if updated_opts:
+                self.hass.config_entries.async_update_entry(self.entry, options=current_opts)
 
         stored = await self._store.async_load()
         if isinstance(stored, dict):
@@ -141,7 +164,9 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.total_runs_count = int(stored.get("total_runs_count", 0))
             self.edge_cut_next = bool(stored.get("edge_cut_next", False))
             self.auto_mow_enabled = bool(stored.get("auto_mow_enabled", False))
-            self.internal_moisture_score = float(stored.get("internal_moisture_score", 0.0))
+            if "internal_moisture_score" in stored:
+                self.internal_moisture_score = float(stored["internal_moisture_score"])
+                self._moisture_initialized = True
 
             if stored.get("observed_t_max") is not None:
                 self._observed_t_max = float(stored["observed_t_max"])
@@ -534,6 +559,18 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
+        # Binary sun sensor (on/off fallback)
+        solar_bin_sensor = self._get_opt(CONF_SENSOR_SOLAR_BINARY)
+        solar_binary_on: bool = False
+        if solar_bin_sensor:
+            st = self.hass.states.get(solar_bin_sensor)
+            if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                solar_binary_on = st.state.lower() in ("on", "true", "sunny", "1")
+
+        solar_diff_threshold = float(
+            self._get_opt(CONF_SOLAR_DIFF_THRESHOLD, DEFAULT_SOLAR_DIFF_THRESHOLD)
+        )
+
         # Rain radar sensor (smart parsing of timestamp, mm, %, or minutes countdown)
         rain_radar_sensor = self._get_opt(CONF_SENSOR_RAIN_RADAR)
         radar_minutes: float | None = None
@@ -619,6 +656,8 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             wind_kmh=wind_speed,
             diff_sonne=diff_sonne,
             solar_rad_wm2=solar_rad,
+            solar_binary_on=solar_binary_on,
+            solar_diff_threshold=solar_diff_threshold,
             rain_mm=rain_rate,
             mower_wet=mower_rain_active,
             weather_condition=weather_cond,
@@ -664,6 +703,32 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for rc in ["rainy", "pouring", "lightning-rainy", "hail", "snowy", "snowy-rainy"]
                 )
             )
+
+            # Smart cold-start initialization if no saved state exists yet
+            if not self._moisture_initialized:
+                sun_shining = (
+                    diff_sonne >= solar_diff_threshold
+                    or solar_rad >= 120.0
+                    or solar_binary_on
+                )
+                if rain_active:
+                    self.internal_moisture_score = 75.0
+                elif "fog" in weather_cond.lower() or current_humidity >= 88.0 or dew_spread < 1.5:
+                    self.internal_moisture_score = 50.0
+                elif current_humidity >= 75.0 and (elevation < 25.0 or not sun_shining):
+                    self.internal_moisture_score = 35.0
+                elif current_humidity >= 68.0:
+                    self.internal_moisture_score = 15.0
+                else:
+                    self.internal_moisture_score = 0.0
+                self._moisture_initialized = True
+                _LOGGER.info(
+                    "MowMaster: Seeded initial lawn moisture score to %.1f (humidity=%.0f%%, spread=%.1f°C)",
+                    self.internal_moisture_score,
+                    current_humidity,
+                    dew_spread,
+                )
+
             if rain_rate > 0.0 or mower_rain_active:
                 self.internal_moisture_score = max(self.internal_moisture_score, 15.0)
 
@@ -952,5 +1017,13 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Reset mowed minutes counter for today."""
         self.mowed_minutes_today = 0.0
         self._session_start_time = None
+        await self._async_save()
+        await self.async_refresh()
+
+    async def async_set_moisture_score(self, score: float) -> None:
+        """Manually calibrate or set the internal lawn moisture score."""
+        self.internal_moisture_score = round(max(0.0, min(100.0, float(score))), 1)
+        self._moisture_initialized = True
+        self._last_moisture_update = dt_util.now()
         await self._async_save()
         await self.async_refresh()

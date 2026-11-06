@@ -7,11 +7,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (
     ALL_SENSOR_KEYS,
+    CONF_CLEARED_SENSORS,
     CONF_CONFIGURE_PRO,
     CONF_DEW_SPREAD_MIN,
     CONF_EDGE_CUT_DATA,
@@ -40,9 +41,11 @@ from .const import (
     CONF_SENSOR_RAIN_RADAR,
     CONF_SENSOR_SOIL,
     CONF_SENSOR_SOLAR,
+    CONF_SENSOR_SOLAR_BINARY,
     CONF_SENSOR_SOLAR_DIFF,
     CONF_SENSOR_TEMP,
     CONF_SENSOR_WIND,
+    CONF_SOLAR_DIFF_THRESHOLD,
     CONF_WEATHER_ENTITY,
     CONF_WILDLIFE_ENABLED,
     CONF_WILDLIFE_SUNRISE_OFFSET,
@@ -61,14 +64,131 @@ from .const import (
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
     DEFAULT_RADAR_RAIN_BUFFER,
+    DEFAULT_SOLAR_DIFF_THRESHOLD,
     DEFAULT_WILDLIFE_SUNRISE,
     DEFAULT_WILDLIFE_SUNSET,
     DOMAIN,
     MOWER_TYPE_CHAOS,
     MOWER_TYPE_SYSTEMATIC,
+    SOLAR_SENSOR_KEYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def discover_companion_sensors(
+    hass: HomeAssistant,
+    mower_entity: str | None,
+    weather_entity: str | None,
+) -> dict[str, str]:
+    """Auto-discover companion sensors from mower and weather devices/entities."""
+    discovered: dict[str, str] = {}
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        ent_reg = er.async_get(hass)
+    except Exception:
+        ent_reg = None
+
+    all_states = hass.states.async_all() if hasattr(hass, "states") else []
+
+    # 1. Discover Mower companion entities (Rain sensor & Battery sensor)
+    if mower_entity and "." in mower_entity:
+        mower_slug = mower_entity.split(".", 1)[1].lower()
+        mower_device_id: str | None = None
+        if ent_reg:
+            m_entry = ent_reg.async_get(mower_entity)
+            if m_entry:
+                mower_device_id = m_entry.device_id
+
+        mower_state = hass.states.get(mower_entity)
+        has_native_battery = bool(
+            mower_state
+            and mower_state.attributes
+            and (
+                mower_state.attributes.get("battery_level") is not None
+                or mower_state.attributes.get("battery") is not None
+            )
+        )
+
+        candidate_ids: list[str] = []
+        if ent_reg and mower_device_id:
+            for entry in er.async_entries_for_device(ent_reg, mower_device_id):
+                if not entry.disabled_by:
+                    candidate_ids.append(entry.entity_id)
+
+        for st in all_states:
+            eid = st.entity_id.lower()
+            if eid.startswith(f"binary_sensor.{mower_slug}_") or eid.startswith(f"sensor.{mower_slug}_"):
+                if st.entity_id not in candidate_ids:
+                    candidate_ids.append(st.entity_id)
+
+        for cid in candidate_ids:
+            cid_low = cid.lower()
+            st = hass.states.get(cid)
+            dc = str(st.attributes.get("device_class", "")).lower() if st and st.attributes else ""
+
+            if cid_low.startswith("binary_sensor.") and CONF_SENSOR_MOWER_RAIN not in discovered:
+                if any(k in cid_low for k in ("regensensor", "regen", "rain")) or dc == "moisture":
+                    discovered[CONF_SENSOR_MOWER_RAIN] = cid
+            elif (
+                cid_low.startswith("sensor.")
+                and not has_native_battery
+                and CONF_SENSOR_BATTERY not in discovered
+            ):
+                if dc == "battery" or any(k in cid_low for k in ("battery", "akku", "batterie")):
+                    discovered[CONF_SENSOR_BATTERY] = cid
+
+    # 2. Discover Weather companion entities (Dew point, Rain radar, Rain rate, Wind speed)
+    if weather_entity and "." in weather_entity:
+        weather_slug = weather_entity.split(".", 1)[1].lower()
+        weather_device_id: str | None = None
+        weather_config_id: str | None = None
+        if ent_reg:
+            w_entry = ent_reg.async_get(weather_entity)
+            if w_entry:
+                weather_device_id = w_entry.device_id
+                weather_config_id = w_entry.config_entry_id
+
+        w_candidates: list[str] = []
+        if ent_reg and weather_device_id:
+            for entry in er.async_entries_for_device(ent_reg, weather_device_id):
+                if not entry.disabled_by and entry.entity_id.startswith("sensor."):
+                    w_candidates.append(entry.entity_id)
+        if ent_reg and weather_config_id and not w_candidates:
+            for entry in er.async_entries_for_config_entry(ent_reg, weather_config_id):
+                if not entry.disabled_by and entry.entity_id.startswith("sensor."):
+                    w_candidates.append(entry.entity_id)
+
+        for st in all_states:
+            eid = st.entity_id.lower()
+            if eid.startswith(f"sensor.{weather_slug}_") and st.entity_id not in w_candidates:
+                w_candidates.append(st.entity_id)
+
+        for cid in w_candidates:
+            cid_low = cid.lower()
+            if CONF_SENSOR_DEW_POINT not in discovered and any(
+                cid_low.endswith(s) or s in cid_low
+                for s in ("_taupunkt", "_dew_point", "_dewpoint")
+            ):
+                discovered[CONF_SENSOR_DEW_POINT] = cid
+            elif CONF_SENSOR_RAIN_RADAR not in discovered and any(
+                k in cid_low for k in ("radar", "nachster_niederschlag", "next_rain")
+            ):
+                discovered[CONF_SENSOR_RAIN_RADAR] = cid
+            elif (
+                CONF_SENSOR_RAIN not in discovered
+                and any(cid_low.endswith(s) for s in ("_niederschlag", "_precipitation", "_rain_rate"))
+                and not any(x in cid_low for x in ("wahrscheinlichkeit", "probability", "radar", "nachster"))
+            ):
+                discovered[CONF_SENSOR_RAIN] = cid
+            elif (
+                CONF_SENSOR_WIND not in discovered
+                and any(cid_low.endswith(s) for s in ("_windgeschwindigkeit", "_wind_speed"))
+            ):
+                discovered[CONF_SENSOR_WIND] = cid
+
+    return discovered
 
 
 def build_basic_schema(current: dict[str, Any], include_pro_toggle: bool = False) -> vol.Schema:
@@ -163,6 +283,12 @@ def build_sensors_schema(options: dict[str, Any]) -> vol.Schema:
                 description={"suggested_value": options.get(CONF_SENSOR_SOLAR)},
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(
+                CONF_SENSOR_SOLAR_BINARY,
+                description={"suggested_value": options.get(CONF_SENSOR_SOLAR_BINARY)},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
+            ),
+            vol.Optional(
                 CONF_SENSOR_WIND,
                 description={"suggested_value": options.get(CONF_SENSOR_WIND)},
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
@@ -190,6 +316,18 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
                     min=0.5,
                     max=6.0,
                     step=0.1,
+                    unit_of_measurement="°C",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(
+                CONF_SOLAR_DIFF_THRESHOLD,
+                default=options.get(CONF_SOLAR_DIFF_THRESHOLD, DEFAULT_SOLAR_DIFF_THRESHOLD),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=3.0,
+                    max=25.0,
+                    step=0.5,
                     unit_of_measurement="°C",
                     mode=selector.NumberSelectorMode.BOX,
                 )
@@ -387,14 +525,27 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             self._basic_data = user_input
 
+            # Auto-discover companion sensors from mower and weather devices
+            discovered = discover_companion_sensors(
+                self.hass,
+                user_input.get(CONF_MOWER_ENTITY),
+                user_input.get(CONF_WEATHER_ENTITY),
+            )
+            for k, v in discovered.items():
+                self._pro_options.setdefault(k, v)
+
             # If user checked Pro configuration, lead directly into Pro setup steps
             if user_input.get(CONF_CONFIGURE_PRO, False):
                 return await self.async_step_pro_sensors()
 
-            # Otherwise finish immediately
+            # Otherwise finish immediately with discovered companion sensors pre-configured
             state = self.hass.states.get(mower_entity)
             name = state.name if state else mower_entity
-            return self.async_create_entry(title=f"MowMaster ({name})", data=self._basic_data)
+            return self.async_create_entry(
+                title=f"MowMaster ({name})",
+                data=self._basic_data,
+                options=self._pro_options,
+            )
 
         return self.async_show_form(
             step_id="user",
@@ -406,13 +557,37 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Step 2: Pro sensors configuration during initial flow."""
+        errors: dict[str, str] = {}
+        form_defaults = dict(self._pro_options)
+
         if user_input is not None:
-            self._pro_options.update(user_input)
-            return await self.async_step_pro_thresholds()
+            selected_solar = [k for k in SOLAR_SENSOR_KEYS if user_input.get(k)]
+            if len(selected_solar) > 1:
+                errors["base"] = "multiple_solar_sensors"
+                for key in ALL_SENSOR_KEYS:
+                    if user_input.get(key):
+                        form_defaults[key] = user_input[key]
+                    else:
+                        form_defaults.pop(key, None)
+            else:
+                cleared = list(self._pro_options.get(CONF_CLEARED_SENSORS, []))
+                for key in ALL_SENSOR_KEYS:
+                    val = user_input.get(key)
+                    if val:
+                        self._pro_options[key] = val
+                        if key in cleared:
+                            cleared.remove(key)
+                    else:
+                        if key in self._pro_options and key not in cleared:
+                            cleared.append(key)
+                        self._pro_options.pop(key, None)
+                self._pro_options[CONF_CLEARED_SENSORS] = cleared
+                return await self.async_step_pro_thresholds()
 
         return self.async_show_form(
             step_id="pro_sensors",
-            data_schema=build_sensors_schema(self._pro_options),
+            data_schema=build_sensors_schema(form_defaults),
+            errors=errors,
         )
 
     async def async_step_pro_thresholds(
@@ -498,18 +673,49 @@ class MowMasterOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Configure optional local weather and soil sensors."""
+        errors: dict[str, str] = {}
+
+        # Pre-fill with any auto-discovered sensors not yet configured or explicitly cleared
+        merged = self._merged_current()
+        discovered = discover_companion_sensors(
+            self.hass,
+            merged.get(CONF_MOWER_ENTITY),
+            merged.get(CONF_WEATHER_ENTITY),
+        )
+        cleared = list(self._options.get(CONF_CLEARED_SENSORS, []))
+        for k, v in discovered.items():
+            if k not in self._options and k not in cleared:
+                self._options[k] = v
+
+        form_defaults = dict(self._options)
+
         if user_input is not None:
-            for key in ALL_SENSOR_KEYS:
-                val = user_input.get(key)
-                if val:
-                    self._options[key] = val
-                else:
-                    self._options.pop(key, None)
-            return await self._async_save_options()
+            selected_solar = [k for k in SOLAR_SENSOR_KEYS if user_input.get(k)]
+            if len(selected_solar) > 1:
+                errors["base"] = "multiple_solar_sensors"
+                for key in ALL_SENSOR_KEYS:
+                    if user_input.get(key):
+                        form_defaults[key] = user_input[key]
+                    else:
+                        form_defaults.pop(key, None)
+            else:
+                for key in ALL_SENSOR_KEYS:
+                    val = user_input.get(key)
+                    if val:
+                        self._options[key] = val
+                        if key in cleared:
+                            cleared.remove(key)
+                    else:
+                        if (key in self._options or key in discovered) and key not in cleared:
+                            cleared.append(key)
+                        self._options.pop(key, None)
+                self._options[CONF_CLEARED_SENSORS] = cleared
+                return await self._async_save_options()
 
         return self.async_show_form(
             step_id="sensors",
-            data_schema=build_sensors_schema(self._options),
+            data_schema=build_sensors_schema(form_defaults),
+            errors=errors,
         )
 
     async def async_step_thresholds(

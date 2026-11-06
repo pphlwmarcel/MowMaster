@@ -20,3 +20,19 @@ reset_daily_budget:
   name: Tagesbudget zurücksetzen
   description: Setzt die heute bereits gemähten Minuten auf 0 zurück.
 
+set_moisture_score:
+  name: Rasenfeuchte-Score setzen
+  description: Kalibriert oder setzt den internen Rasenfeuchte-Score von MowMaster (0.0 = staubtrocken bis 100.0 = regennass).
+  fields:
+    moisture_score:
+      name: Nässe-Score
+      description: Neuer Wert für den internen Nässe-Score (0 bis 100 pts).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.5
+          unit_of_measurement: pts
+
+

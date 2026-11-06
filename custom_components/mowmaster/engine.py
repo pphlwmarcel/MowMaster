@@ -20,6 +20,7 @@ from .const import (
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
     DEFAULT_RADAR_RAIN_BUFFER,
+    DEFAULT_SOLAR_DIFF_THRESHOLD,
     DEFAULT_WILDLIFE_SUNRISE,
     DEFAULT_WILDLIFE_SUNSET,
     MOWER_TYPE_CHAOS,
@@ -142,6 +143,8 @@ def calculate_drying_rate(
     wind_kmh: float = 0.0,
     diff_sonne: float = 0.0,
     solar_rad_wm2: float = 0.0,
+    solar_binary_on: bool = False,
+    solar_diff_threshold: float = DEFAULT_SOLAR_DIFF_THRESHOLD,
     rain_mm: float = 0.0,
     mower_wet: bool = False,
     weather_condition: str | None = None,
@@ -156,13 +159,21 @@ def calculate_drying_rate(
     strahlung_nacht = min(diff_sonne, 0.0)
     t_halm = temp_c + strahlung_nacht
 
+    sun_active = (
+        diff_sonne >= solar_diff_threshold
+        or solar_rad_wm2 >= 120.0
+        or solar_binary_on
+    )
+    t_effective = temp_c + (max(0.0, diff_sonne) if diff_sonne >= solar_diff_threshold else (6.0 if sun_active else 0.0))
+    temp_cutoff = t_effective < 4.0 if sun_active else temp_c < 6.0
+
     # Check cutoff conditions where drying is physically impossible
     if (
         sun_below_horizon
         or sun_elevation < 3.0
         or spreizung < 1.5
         or t_halm <= (dew_c + 0.5)
-        or temp_c < 6.0
+        or temp_cutoff
         or rain_mm > 0.0
         or mower_wet
         or any(rc in cond for rc in rain_conditions)
@@ -178,11 +189,13 @@ def calculate_drying_rate(
     # Solar elevation factor (sun angle 6° to 35°)
     elev_factor = (min(1.0, max(0.0, (sun_elevation - 6.0) / 29.0))) * 0.85 + 0.15
 
-    # Solar input from temperature diff or pyranometer W/m²
-    if diff_sonne >= 3.0:
-        raw_sun = min(diff_sonne * 1.0, 22.0)
-    elif solar_rad_wm2 > 50.0:
-        raw_sun = min(solar_rad_wm2 / 40.0, 22.0)
+    # Solar input from differential temperature (°C), pyranometer (W/m²), or binary sun sensor
+    if diff_sonne >= solar_diff_threshold:
+        raw_sun = min(22.0, 2.0 + ((diff_sonne - solar_diff_threshold) / 25.0) * 20.0)
+    elif solar_rad_wm2 >= 120.0:
+        raw_sun = min(22.0, 2.0 + ((solar_rad_wm2 - 120.0) / 730.0) * 20.0)
+    elif solar_binary_on:
+        raw_sun = 10.0
     else:
         raw_sun = 0.0
 
@@ -484,18 +497,13 @@ def evaluate_slot(
     if heat_blocked:
         blocking_reasons.append("heat_limit_exceeded")
 
-    # 5. Location-Based Photoperiod Morning Window
-    # Only delay mornings during short-day seasons (Autumn/Late Winter/Early Spring: < 11.5h daylight)
-    # when mornings remain cool (< 14°C) and sun is still low.
+    # 5. Sun & Daylight Horizon Check
+    # Since MowMaster calculates physical dew spread, surface moisture, minimum temperature,
+    # and wildlife sunrise offsets, no rigid clock-based autumn morning curfew is needed.
     seasonal_blocked = False
     if not sun_above_horizon:
         seasonal_blocked = True
         blocking_reasons.append("sun_below_horizon")
-    elif daylight_hours < 11.5:
-        req_hour = 12 if daylight_hours < 10.0 else 11
-        if now.hour < req_hour and current_temp < 14.0:
-            seasonal_blocked = True
-            blocking_reasons.append("seasonal_morning_cold")
 
     # 6. Biological Growth Dormancy vs. Daily Quota Completed Check
     effective_target = target_daily_minutes if target_daily_minutes is not None else remaining_minutes_today

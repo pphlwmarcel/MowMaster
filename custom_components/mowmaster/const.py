@@ -2,7 +2,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "mowmaster"
-INTEGRATION_VERSION = "0.2.2"
+INTEGRATION_VERSION = "0.2.4"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -19,6 +19,7 @@ CONF_MOWER_TYPE = "mower_type"
 CONF_LAWN_IRRIGATED = "lawn_irrigated"
 CONF_MOWER_CAPACITY = "mower_capacity"
 CONF_CONFIGURE_PRO = "configure_pro"
+CONF_CLEARED_SENSORS = "cleared_sensors"
 
 # Mower types
 MOWER_TYPE_CHAOS = "chaos"
@@ -35,6 +36,7 @@ CONF_SENSOR_MOISTURE_SCORE = "sensor_moisture_score"
 CONF_SENSOR_WIND = "sensor_wind"
 CONF_SENSOR_SOLAR = "sensor_solar"
 CONF_SENSOR_SOLAR_DIFF = "sensor_solar_diff"
+CONF_SENSOR_SOLAR_BINARY = "sensor_solar_binary"
 CONF_SENSOR_SOIL = "sensor_soil"
 CONF_SENSOR_BATTERY = "sensor_battery"
 
@@ -48,13 +50,21 @@ ALL_SENSOR_KEYS = (
     CONF_SENSOR_RAIN_RADAR,
     CONF_SENSOR_SOLAR_DIFF,
     CONF_SENSOR_SOLAR,
+    CONF_SENSOR_SOLAR_BINARY,
     CONF_SENSOR_WIND,
     CONF_SENSOR_SOIL,
     CONF_SENSOR_BATTERY,
 )
 
+SOLAR_SENSOR_KEYS = (
+    CONF_SENSOR_SOLAR_DIFF,
+    CONF_SENSOR_SOLAR,
+    CONF_SENSOR_SOLAR_BINARY,
+)
+
 # Thresholds & Constraints
 CONF_DEW_SPREAD_MIN = "dew_spread_min"
+CONF_SOLAR_DIFF_THRESHOLD = "solar_diff_threshold"
 CONF_MIN_TEMP = "min_temp"
 CONF_HEAT_LIMIT = "heat_limit"
 CONF_MOISTURE_THRESHOLD = "moisture_threshold"
@@ -78,6 +88,7 @@ DEFAULT_LAWN_IRRIGATED = False
 DEFAULT_CAPACITY_CHAOS = 50.0  # m²/h
 DEFAULT_CAPACITY_SYSTEMATIC = 120.0  # m²/h
 DEFAULT_DEW_SPREAD_MIN = 2.5  # °C
+DEFAULT_SOLAR_DIFF_THRESHOLD = 10.0  # °C (above 10°C is direct sunshine, below is diffuse cloud light)
 DEFAULT_MIN_TEMP = 9.0  # °C (safe grass cutting minimum)
 DEFAULT_HEAT_LIMIT = 28.0  # °C
 DEFAULT_MOISTURE_THRESHOLD = 3.0  # pts (below 3 pts is dry)
