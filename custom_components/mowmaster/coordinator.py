@@ -166,7 +166,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.auto_mow_enabled = bool(stored.get("auto_mow_enabled", False))
             if "internal_moisture_score" in stored:
                 self.internal_moisture_score = float(stored["internal_moisture_score"])
-                self._moisture_initialized = True
+            self._moisture_initialized = bool(stored.get("moisture_initialized", False))
 
             if stored.get("observed_t_max") is not None:
                 self._observed_t_max = float(stored["observed_t_max"])
@@ -235,6 +235,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "edge_cut_next": self.edge_cut_next,
             "auto_mow_enabled": self.auto_mow_enabled,
             "internal_moisture_score": round(self.internal_moisture_score, 1),
+            "moisture_initialized": self._moisture_initialized,
             "session_start_time": (
                 self._session_start_time.isoformat() if self._session_start_time else None
             ),
@@ -686,6 +687,8 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 try:
                     moisture_score = float(st.state)
+                    self.internal_moisture_score = round(moisture_score, 1)
+                    self._moisture_initialized = True
                 except ValueError:
                     moisture_score = self.internal_moisture_score
             else:
@@ -712,19 +715,39 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     or solar_binary_on
                 )
                 if rain_active:
-                    self.internal_moisture_score = 75.0
+                    base_seed = 75.0
                 elif "fog" in weather_cond.lower() or current_humidity >= 88.0 or dew_spread < 1.5:
-                    self.internal_moisture_score = 50.0
+                    base_seed = 50.0
                 elif current_humidity >= 75.0 and (elevation < 25.0 or not sun_shining):
-                    self.internal_moisture_score = 35.0
+                    base_seed = 35.0
                 elif current_humidity >= 68.0:
-                    self.internal_moisture_score = 15.0
+                    base_seed = 15.0
                 else:
-                    self.internal_moisture_score = 0.0
+                    base_seed = 0.0
+
+                # Estimate residual morning dew carryover (starts drying ~2.5h after sunrise from 55.0 pts)
+                dew_carryover = 0.0
+                if current_temp < 20.0 and (current_humidity >= 60.0 or daylight_hours <= 12.5):
+                    drying_start = (
+                        sunrise + timedelta(hours=2.5)
+                        if sunrise is not None
+                        else now.replace(hour=9, minute=30, second=0, microsecond=0)
+                    )
+                    if now <= drying_start:
+                        dew_carryover = 55.0
+                    else:
+                        end_ref = min(now, sunset) if sunset is not None else now
+                        drying_hours = max(0.0, (end_ref - drying_start).total_seconds() / 3600.0)
+                        eff_drying = max(drying_rate, 3.0 if sun_shining else 1.5)
+                        dew_carryover = max(0.0, 55.0 - (drying_hours * eff_drying))
+
+                self.internal_moisture_score = round(max(base_seed, dew_carryover), 1)
                 self._moisture_initialized = True
                 _LOGGER.info(
-                    "MowMaster: Seeded initial lawn moisture score to %.1f (humidity=%.0f%%, spread=%.1f°C)",
+                    "MowMaster: Seeded initial lawn moisture score to %.1f (base=%.1f, dew_carryover=%.1f, humidity=%.0f%%, spread=%.1f°C)",
                     self.internal_moisture_score,
+                    base_seed,
+                    dew_carryover,
                     current_humidity,
                     dew_spread,
                 )
