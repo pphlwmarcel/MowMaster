@@ -11,6 +11,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    ALL_SENSOR_KEYS,
     CONF_CONFIGURE_PRO,
     CONF_DEW_SPREAD_MIN,
     CONF_EDGE_CUT_DATA,
@@ -18,6 +19,7 @@ from .const import (
     CONF_EDGE_CUT_SERVICE,
     CONF_HEAT_LIMIT,
     CONF_LAWN_AREA,
+    CONF_LAWN_IRRIGATED,
     CONF_MAX_RUN_TIME,
     CONF_MIN_BATTERY_LEVEL,
     CONF_MIN_TEMP,
@@ -50,6 +52,7 @@ from .const import (
     DEFAULT_DEW_SPREAD_MIN,
     DEFAULT_HEAT_LIMIT,
     DEFAULT_LAWN_AREA,
+    DEFAULT_LAWN_IRRIGATED,
     DEFAULT_MIN_BATTERY,
     DEFAULT_MIN_TEMP,
     DEFAULT_MOISTURE_THRESHOLD,
@@ -68,6 +71,51 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def build_basic_schema(current: dict[str, Any], include_pro_toggle: bool = False) -> vol.Schema:
+    """Build schema for basic setup and basic options."""
+    fields: dict[Any, Any] = {
+        vol.Required(
+            CONF_MOWER_ENTITY,
+            default=current.get(CONF_MOWER_ENTITY, vol.UNDEFINED),
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain="lawn_mower")),
+        vol.Required(
+            CONF_WEATHER_ENTITY,
+            default=current.get(CONF_WEATHER_ENTITY, vol.UNDEFINED),
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
+        vol.Required(
+            CONF_LAWN_AREA,
+            default=current.get(CONF_LAWN_AREA, DEFAULT_LAWN_AREA),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=10000,
+                step=10,
+                unit_of_measurement="m²",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(
+            CONF_MOWER_TYPE,
+            default=current.get(CONF_MOWER_TYPE, DEFAULT_MOWER_TYPE),
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[MOWER_TYPE_CHAOS, MOWER_TYPE_SYSTEMATIC],
+                translation_key="mower_type",
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(
+            CONF_LAWN_IRRIGATED,
+            default=current.get(CONF_LAWN_IRRIGATED, DEFAULT_LAWN_IRRIGATED),
+        ): selector.BooleanSelector(),
+    }
+
+    if include_pro_toggle:
+        fields[vol.Optional(CONF_CONFIGURE_PRO, default=False)] = selector.BooleanSelector()
+
+    return vol.Schema(fields)
+
+
 def build_sensors_schema(options: dict[str, Any]) -> vol.Schema:
     """Build schema for Pro sensor overrides and moisture sources."""
     return vol.Schema(
@@ -75,7 +123,9 @@ def build_sensors_schema(options: dict[str, Any]) -> vol.Schema:
             vol.Optional(
                 CONF_SENSOR_TEMP,
                 description={"suggested_value": options.get(CONF_SENSOR_TEMP)},
-            ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "weather"])),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["sensor", "weather"])
+            ),
             vol.Optional(
                 CONF_SENSOR_HUMIDITY,
                 description={"suggested_value": options.get(CONF_SENSOR_HUMIDITY)},
@@ -129,7 +179,7 @@ def build_sensors_schema(options: dict[str, Any]) -> vol.Schema:
 
 
 def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
-    """Build schema for thresholds, wildlife and quiet hours."""
+    """Build schema for environmental thresholds and wildlife protection."""
     return vol.Schema(
         {
             vol.Required(
@@ -138,10 +188,10 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.5,
-                    max=8.0,
+                    max=6.0,
                     step=0.1,
                     unit_of_measurement="°C",
-                    mode=selector.NumberSelectorMode.SLIDER,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Required(
@@ -149,11 +199,11 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
                 default=options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=0.0,
-                    max=18.0,
+                    min=4.0,
+                    max=16.0,
                     step=0.5,
                     unit_of_measurement="°C",
-                    mode=selector.NumberSelectorMode.SLIDER,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Required(
@@ -161,11 +211,11 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
                 default=options.get(CONF_HEAT_LIMIT, DEFAULT_HEAT_LIMIT),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=20.0,
-                    max=40.0,
+                    min=22.0,
+                    max=38.0,
                     step=0.5,
                     unit_of_measurement="°C",
-                    mode=selector.NumberSelectorMode.SLIDER,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Required(
@@ -174,7 +224,7 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.5,
-                    max=20.0,
+                    max=30.0,
                     step=0.5,
                     unit_of_measurement="pts",
                     mode=selector.NumberSelectorMode.BOX,
@@ -235,7 +285,9 @@ def build_thresholds_schema(options: dict[str, Any]) -> vol.Schema:
 def build_mower_schema(options: dict[str, Any], mower_type: str = MOWER_TYPE_CHAOS) -> vol.Schema:
     """Build schema for mower runtime, capacity and edge cut."""
     default_cap = (
-        DEFAULT_CAPACITY_SYSTEMATIC if mower_type == MOWER_TYPE_SYSTEMATIC else DEFAULT_CAPACITY_CHAOS
+        DEFAULT_CAPACITY_SYSTEMATIC
+        if mower_type == MOWER_TYPE_SYSTEMATIC
+        else DEFAULT_CAPACITY_CHAOS
     )
     return vol.Schema(
         {
@@ -335,7 +387,7 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             self._basic_data = user_input
 
-            # If user checked Pro configuration, lead directly into Pro setup steps!
+            # If user checked Pro configuration, lead directly into Pro setup steps
             if user_input.get(CONF_CONFIGURE_PRO, False):
                 return await self.async_step_pro_sensors()
 
@@ -344,35 +396,11 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             name = state.name if state else mower_entity
             return self.async_create_entry(title=f"MowMaster ({name})", data=self._basic_data)
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_MOWER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="lawn_mower")
-                ),
-                vol.Required(CONF_WEATHER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="weather")
-                ),
-                vol.Required(CONF_LAWN_AREA, default=DEFAULT_LAWN_AREA): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10,
-                        max=10000,
-                        step=10,
-                        unit_of_measurement="m²",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_MOWER_TYPE, default=DEFAULT_MOWER_TYPE): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[MOWER_TYPE_CHAOS, MOWER_TYPE_SYSTEMATIC],
-                        translation_key="mower_type",
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(CONF_CONFIGURE_PRO, default=False): selector.BooleanSelector(),
-            }
+        return self.async_show_form(
+            step_id="user",
+            data_schema=build_basic_schema({}, include_pro_toggle=True),
+            errors=errors,
         )
-
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_pro_sensors(
         self, user_input: dict[str, Any] | None = None
@@ -431,20 +459,39 @@ class MowMasterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class MowMasterOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for MowMaster Pro settings."""
+    """Handle options flow for MowMaster Basic and Pro settings."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow using internal _config_entry."""
         self._config_entry = config_entry
         self._options = dict(config_entry.options)
 
+    def _merged_current(self) -> dict[str, Any]:
+        """Return merged dictionary of entry data and options."""
+        merged = dict(self._config_entry.data)
+        merged.update(self._options)
+        return merged
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Present options menu for Pro settings."""
+        """Present options menu for Basic and Pro settings."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["sensors", "thresholds", "mower_management"],
+            menu_options=["basic", "sensors", "thresholds", "mower_management"],
+        )
+
+    async def async_step_basic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Configure basic lawn area, mower type, irrigation, and entities."""
+        if user_input is not None:
+            self._options.update(user_input)
+            return await self._async_save_options()
+
+        return self.async_show_form(
+            step_id="basic",
+            data_schema=build_basic_schema(self._merged_current(), include_pro_toggle=False),
         )
 
     async def async_step_sensors(
@@ -452,7 +499,12 @@ class MowMasterOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         """Configure optional local weather and soil sensors."""
         if user_input is not None:
-            self._options.update(user_input)
+            for key in ALL_SENSOR_KEYS:
+                val = user_input.get(key)
+                if val:
+                    self._options[key] = val
+                else:
+                    self._options.pop(key, None)
             return await self._async_save_options()
 
         return self.async_show_form(
@@ -479,6 +531,12 @@ class MowMasterOptionsFlow(config_entries.OptionsFlow):
         """Configure runtime limits, battery thresholds, and edge mowing."""
         if user_input is not None:
             self._options.update(user_input)
+            for opt_key in (CONF_EDGE_CUT_SERVICE, CONF_EDGE_CUT_DATA):
+                val = user_input.get(opt_key)
+                if val and str(val).strip():
+                    self._options[opt_key] = str(val).strip()
+                else:
+                    self._options.pop(opt_key, None)
             return await self._async_save_options()
 
         mower_type = self._options.get(
@@ -492,4 +550,3 @@ class MowMasterOptionsFlow(config_entries.OptionsFlow):
     async def _async_save_options(self) -> config_entries.ConfigFlowResult:
         """Save updated options."""
         return self.async_create_entry(title="", data=self._options)
-

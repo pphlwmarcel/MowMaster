@@ -15,7 +15,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, INTEGRATION_VERSION
 from .coordinator import MowMasterCoordinator
 
 
@@ -56,7 +56,7 @@ class MowMasterBaseSensor(CoordinatorEntity[MowMasterCoordinator], SensorEntity)
             name=coordinator.entry.title,
             manufacturer="MowMaster",
             model="Intelligent Lawn Controller",
-            sw_version="1.0.0",
+            sw_version=INTEGRATION_VERSION,
         )
 
 

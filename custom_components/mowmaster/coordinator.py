@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import json
 import logging
 from typing import Any
 
@@ -19,25 +20,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
 from .const import (
-    ATTR_DAYS_SINCE_FERTILIZED,
-    ATTR_DEW_POINT,
-    ATTR_DEW_SPREAD,
-    ATTR_DRYING_RATE,
-    ATTR_GDD,
-    ATTR_GROWTH_INDEX,
-    ATTR_MOISTURE_SCORE,
-    ATTR_MOWED_MINUTES,
-    ATTR_REASONS,
-    ATTR_REMAINING_MINUTES,
-    ATTR_RUNS_COUNT,
-    ATTR_TARGET_MINUTES,
-    ATTR_WETTING_RATE,
     CONF_DEW_SPREAD_MIN,
     CONF_EDGE_CUT_DATA,
     CONF_EDGE_CUT_INTERVAL,
     CONF_EDGE_CUT_SERVICE,
     CONF_HEAT_LIMIT,
     CONF_LAWN_AREA,
+    CONF_LAWN_IRRIGATED,
     CONF_MAX_RUN_TIME,
     CONF_MIN_BATTERY_LEVEL,
     CONF_MIN_TEMP,
@@ -65,11 +54,10 @@ from .const import (
     CONF_WILDLIFE_ENABLED,
     CONF_WILDLIFE_SUNRISE_OFFSET,
     CONF_WILDLIFE_SUNSET_OFFSET,
-    DEFAULT_CAPACITY_CHAOS,
-    DEFAULT_CAPACITY_SYSTEMATIC,
     DEFAULT_DEW_SPREAD_MIN,
     DEFAULT_HEAT_LIMIT,
     DEFAULT_LAWN_AREA,
+    DEFAULT_LAWN_IRRIGATED,
     DEFAULT_MIN_BATTERY,
     DEFAULT_MIN_TEMP,
     DEFAULT_MOISTURE_THRESHOLD,
@@ -85,7 +73,6 @@ from .const import (
 )
 from .engine import (
     MoistureStatus,
-    SlotEvaluation,
     calculate_daily_target_minutes,
     calculate_dew_point,
     calculate_drying_rate,
@@ -95,12 +82,13 @@ from .engine import (
     calculate_soil_factor,
     calculate_wetting_rate,
     evaluate_slot,
+    is_surface_dry,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-MOWING_STATES = {"mowing", "cutting", "mow"}
-DOCKED_STATES = {"docked", "charging", "idle"}
+MOWING_STATES = {"mowing", "cutting", "mow", "edgecut", "border_cut", "zoning"}
+DOCKED_STATES = {"docked", "charging", "idle", "standby"}
 
 
 class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -127,36 +115,63 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.internal_moisture_score: float = 0.0
         self._last_moisture_update: datetime = dt_util.now()
 
-        # Cached forecast
+        # Cached forecast & daily observed temperatures
         self._cached_t_max: float | None = None
         self._cached_t_min: float | None = None
+        self._observed_t_max: float | None = None
+        self._observed_t_min: float | None = None
         self._last_forecast_fetch: datetime | None = None
 
-        # Live session tracking
+        # Live session tracking & command debounce
         self._session_start_time: datetime | None = None
         self._last_mower_state: str | None = None
+        self._last_auto_cmd_time: datetime | None = None
         self._unsub_trackers: list[CALLBACK_TYPE] = []
 
     async def async_setup(self) -> None:
         """Load stored data and register state change listeners."""
+        now = dt_util.now()
+        today_str = now.date().isoformat()
+
         stored = await self._store.async_load()
         if isinstance(stored, dict):
             self.last_fertilized_date = stored.get("last_fertilized_date")
             self.mowed_minutes_today = float(stored.get("mowed_minutes_today", 0.0))
-            self.last_reset_date = stored.get("last_reset_date", dt_util.now().date().isoformat())
+            self.last_reset_date = stored.get("last_reset_date", today_str)
             self.total_runs_count = int(stored.get("total_runs_count", 0))
             self.edge_cut_next = bool(stored.get("edge_cut_next", False))
             self.auto_mow_enabled = bool(stored.get("auto_mow_enabled", False))
             self.internal_moisture_score = float(stored.get("internal_moisture_score", 0.0))
 
-        today_str = dt_util.now().date().isoformat()
+            if stored.get("observed_t_max") is not None:
+                self._observed_t_max = float(stored["observed_t_max"])
+            if stored.get("observed_t_min") is not None:
+                self._observed_t_min = float(stored["observed_t_min"])
+
+            raw_sess = stored.get("session_start_time")
+            if isinstance(raw_sess, str):
+                parsed_sess = dt_util.parse_datetime(raw_sess)
+                if parsed_sess and parsed_sess.date().isoformat() == today_str:
+                    self._session_start_time = parsed_sess
+
         if self.last_reset_date != today_str:
             self.mowed_minutes_today = 0.0
+            self._observed_t_max = None
+            self._observed_t_min = None
+            self._session_start_time = None
             self.last_reset_date = today_str
             await self._async_save()
 
         mower_entity = self._get_opt(CONF_MOWER_ENTITY)
         if mower_entity:
+            # Check if mower is already mowing right now (e.g. after HA restart)
+            st = self.hass.states.get(mower_entity)
+            if st and (st.state or "").lower() in MOWING_STATES:
+                self._last_mower_state = st.state.lower()
+                if self._session_start_time is None:
+                    self._session_start_time = now
+                    await self._async_save()
+
             self._unsub_trackers.append(
                 async_track_state_change_event(
                     self.hass, [mower_entity], self._handle_mower_state_change
@@ -195,6 +210,11 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "edge_cut_next": self.edge_cut_next,
             "auto_mow_enabled": self.auto_mow_enabled,
             "internal_moisture_score": round(self.internal_moisture_score, 1),
+            "session_start_time": (
+                self._session_start_time.isoformat() if self._session_start_time else None
+            ),
+            "observed_t_max": self._observed_t_max,
+            "observed_t_min": self._observed_t_min,
         }
         await self._store.async_save(data)
 
@@ -226,7 +246,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         elif old_val in MOWING_STATES and new_val not in MOWING_STATES:
             if self._session_start_time:
-                duration_min = (now - self._session_start_time).total_seconds() / 60.0
+                duration_min = max(0.0, (now - self._session_start_time).total_seconds() / 60.0)
                 self.mowed_minutes_today += duration_min
                 _LOGGER.info(
                     "MowMaster: Session finished. Duration: %.1f min. Today: %.1f min",
@@ -242,7 +262,20 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @callback
     def _handle_environment_change(self, event: Event) -> None:
         """Handle real-time environmental changes (rain, radar, moisture score)."""
-        self.async_set_updated_data(self._calculate_all())
+        data = self._calculate_all()
+        self.async_set_updated_data(data)
+
+        # Immediately recall mower if acute rain, heat, or wildlife hazard occurs while mowing
+        if (
+            self.auto_mow_enabled
+            and data.get("current_mower_state") in MOWING_STATES
+            and (
+                data.get("rain_blocked")
+                or data.get("heat_blocked")
+                or data.get("wildlife_blocked")
+            )
+        ):
+            self.hass.async_create_task(self._async_manage_auto_mow(data))
 
     def _get_sun_times(self, now: datetime) -> tuple[datetime | None, datetime | None, float, bool]:
         """Get sunrise, sunset, elevation and horizon status."""
@@ -278,7 +311,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return sunrise, sunset, elevation, above_horizon
 
     async def _async_fetch_forecast(self, weather_entity: str | None) -> None:
-        """Fetch daily max/min forecast using HA weather.get_forecasts service."""
+        """Fetch daily or hourly max/min forecast using HA weather.get_forecasts service."""
         now = dt_util.now()
         if (
             self._last_forecast_fetch
@@ -291,42 +324,57 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         candidates.extend(["weather.forecast_home", "weather.openweathermap"])
 
         for ent in [c for c in candidates if c]:
-            try:
-                st = self.hass.states.get(ent)
-                if not st or st.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    continue
+            st = self.hass.states.get(ent)
+            if not st or st.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                continue
 
-                res = await self.hass.services.async_call(
-                    "weather",
-                    "get_forecasts",
-                    {"entity_id": ent, "type": "daily"},
-                    blocking=True,
-                    return_response=True,
-                )
-                if isinstance(res, dict) and ent in res:
-                    fc_list = res[ent].get("forecast")
-                    if isinstance(fc_list, list) and len(fc_list) > 0:
-                        first = fc_list[0]
-                        if "temperature" in first and first["temperature"] is not None:
-                            self._cached_t_max = float(first["temperature"])
-                            low = first.get("templow")
-                            self._cached_t_min = float(low) if low is not None else self._cached_t_max - 5.0
-                            self._last_forecast_fetch = now
-                            _LOGGER.debug(
-                                "MowMaster: Fetched daily forecast from %s: max=%.1f, min=%.1f",
-                                ent,
-                                self._cached_t_max,
-                                self._cached_t_min,
-                            )
-                            return
-            except Exception as err:
-                _LOGGER.debug("Could not get forecast from %s: %s", ent, err)
+            # Try daily forecast first, then hourly fallback
+            for fc_type in ("daily", "hourly"):
+                try:
+                    res = await self.hass.services.async_call(
+                        "weather",
+                        "get_forecasts",
+                        {"entity_id": ent, "type": fc_type},
+                        blocking=True,
+                        return_response=True,
+                    )
+                    if isinstance(res, dict) and ent in res:
+                        fc_list = res[ent].get("forecast")
+                        if isinstance(fc_list, list) and len(fc_list) > 0:
+                            if fc_type == "daily":
+                                first = fc_list[0]
+                                if "temperature" in first and first["temperature"] is not None:
+                                    self._cached_t_max = float(first["temperature"])
+                                    low = first.get("templow")
+                                    self._cached_t_min = (
+                                        float(low) if low is not None else self._cached_t_max - 6.0
+                                    )
+                                    self._last_forecast_fetch = now
+                                    return
+                            else:
+                                temps = [
+                                    float(item["temperature"])
+                                    for item in fc_list[:24]
+                                    if isinstance(item, dict) and item.get("temperature") is not None
+                                ]
+                                if temps:
+                                    self._cached_t_max = max(temps)
+                                    self._cached_t_min = min(temps)
+                                    self._last_forecast_fetch = now
+                                    return
+                except Exception as err:
+                    _LOGGER.debug("Could not get %s forecast from %s: %s", fc_type, ent, err)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch updated data and execute autonomous decision checks."""
-        today_str = dt_util.now().date().isoformat()
+        now = dt_util.now()
+        today_str = now.date().isoformat()
         if self.last_reset_date != today_str:
+            if self._session_start_time:
+                self._session_start_time = now
             self.mowed_minutes_today = 0.0
+            self._observed_t_max = None
+            self._observed_t_min = None
             self.last_reset_date = today_str
             await self._async_save()
 
@@ -335,6 +383,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._async_fetch_forecast(weather_entity)
 
         data = self._calculate_all()
+        await self._async_save()
         await self._async_manage_auto_mow(data)
         return data
 
@@ -351,7 +400,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pass
         day_of_year = now.timetuple().tm_yday
 
-        # 1. Temperature: Prioritize local temperature sensor (e.g. Garten Bodensensor)
+        # 1. Temperature: Prioritize local temperature sensor
         current_temp: float | None = None
         temp_sensor = self._get_opt(CONF_SENSOR_TEMP)
         if temp_sensor:
@@ -362,7 +411,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
-        # 2. Weather entity reading (with fallback to any available weather entity if selected is unavailable)
+        # 2. Weather entity reading
         weather_entity = self._get_opt(CONF_WEATHER_ENTITY)
         weather_state = self.hass.states.get(weather_entity) if weather_entity else None
 
@@ -384,9 +433,14 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if "humidity" in attrs and attrs["humidity"] is not None:
                 current_humidity = float(attrs["humidity"])
 
-        # Absolute fallback if neither local sensor nor weather entity provided temp
         if current_temp is None:
             current_temp = 10.0
+
+        # Track actual observed daily min and max temperatures
+        if self._observed_t_max is None or current_temp > self._observed_t_max:
+            self._observed_t_max = current_temp
+        if self._observed_t_min is None or current_temp < self._observed_t_min:
+            self._observed_t_min = current_temp
 
         # Override humidity with local sensor if configured
         hum_sensor = self._get_opt(CONF_SENSOR_HUMIDITY)
@@ -398,17 +452,17 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
-        # 3. Forecast T_max and T_min for biological GDD
+        # 3. Forecast & Observed T_max and T_min for biological GDD
         if self._cached_t_max is not None and self._cached_t_min is not None:
-            t_max = self._cached_t_max
-            t_min = self._cached_t_min
+            t_max = max(self._cached_t_max, self._observed_t_max)
+            t_min = min(self._cached_t_min, self._observed_t_min)
         else:
-            if now.month in [11, 12, 1, 2]:
-                t_max = current_temp + 1.0
-                t_min = max(0.0, current_temp - 5.0)
-            else:
-                t_max = current_temp + 3.0
-                t_min = max(4.0, current_temp - 6.0)
+            t_max = self._observed_t_max if self._observed_t_max is not None else current_temp
+            t_min = (
+                self._observed_t_min
+                if self._observed_t_min is not None and self._observed_t_min < t_max
+                else (current_temp - 4.0)
+            )
 
         # 4. Dew point calculation or measurement
         dew_point: float
@@ -480,33 +534,50 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
-        # Rain radar sensor (e.g. DWD radar)
+        # Rain radar sensor (smart parsing of timestamp, mm, %, or minutes countdown)
         rain_radar_sensor = self._get_opt(CONF_SENSOR_RAIN_RADAR)
         radar_minutes: float | None = None
         radar_sum: float | None = None
         if rain_radar_sensor:
             st = self.hass.states.get(rain_radar_sensor)
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                if st.attributes and "sum" in st.attributes:
-                    try:
-                        radar_sum = float(st.attributes["sum"])
-                    except (ValueError, TypeError):
-                        pass
+                attrs = st.attributes or {}
+                for sum_attr in ("sum", "precipitation", "rain"):
+                    if sum_attr in attrs and attrs[sum_attr] is not None:
+                        try:
+                            radar_sum = float(attrs[sum_attr])
+                            break
+                        except (ValueError, TypeError):
+                            pass
 
                 parsed_time = dt_util.parse_datetime(st.state)
                 if parsed_time:
-                    diff_sec = (parsed_time - now).total_seconds()
-                    radar_minutes = max(0.0, diff_sec / 60.0)
+                    diff_min = (parsed_time - now).total_seconds() / 60.0
+                    # Ignore stale timestamps more than 2 minutes in the past
+                    if -2.0 <= diff_min <= 1440.0:
+                        radar_minutes = max(0.1, round(diff_min, 1))
                 else:
                     try:
-                        radar_minutes = float(st.state)
+                        val = float(st.state)
+                        unit = str(attrs.get("unit_of_measurement", "")).strip().lower()
+                        if unit in ("mm", "l/m²", "l/m2", "mm/h", "in"):
+                            radar_sum = val
+                        elif unit == "%":
+                            if val >= 65.0:
+                                radar_sum = max(radar_sum or 0.0, 0.5)
+                        else:
+                            if unit in ("s", "sec", "seconds"):
+                                val = val / 60.0
+                            # Only treat positive values > 0 as a countdown in minutes
+                            if val > 0.0:
+                                radar_minutes = round(val, 1)
                     except ValueError:
                         pass
 
         # Sun astronomical position
         sunrise, sunset, elevation, above_horizon = self._get_sun_times(now)
 
-        # 5. Biological Growth & GDD (including location-based photoperiod season factor)
+        # 5. Biological Growth & GDD (including location-based photoperiod & irrigation)
         gdd = calculate_gdd(t_max=t_max, t_min=t_min)
         days_since_fert: int | None = None
         if self.last_fertilized_date:
@@ -526,8 +597,13 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except ValueError:
                     pass
 
+        lawn_irrigated = bool(self._get_opt(CONF_LAWN_IRRIGATED, DEFAULT_LAWN_IRRIGATED))
         fert_factor = calculate_fertilizer_factor(days_since_fert)
-        soil_factor = calculate_soil_factor(soil_pct)
+        soil_factor = calculate_soil_factor(
+            soil_moisture_percent=soil_pct,
+            lawn_irrigated=lawn_irrigated,
+            gdd=gdd,
+        )
         growth_index, season_factor, daylight_hours = calculate_growth_index(
             gdd=gdd,
             latitude=latitude,
@@ -563,7 +639,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sun_elevation=elevation,
         )
 
-        # Moisture score determination (external helper or internal simulation)
+        # Moisture score determination (external helper or internal physical integration)
         score_sensor = self._get_opt(CONF_SENSOR_MOISTURE_SCORE)
         moisture_score: float
         if score_sensor:
@@ -576,9 +652,10 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 moisture_score = self.internal_moisture_score
         else:
-            delta_hours = max(0.01, min(1.0, (now - self._last_moisture_update).total_seconds() / 3600.0))
+            elapsed_sec = max(0.0, (now - self._last_moisture_update).total_seconds())
+            delta_hours = min(1.0, elapsed_sec / 3600.0)
             self._last_moisture_update = now
-            delta = (wetting_rate - drying_rate) * delta_hours
+
             rain_active = (
                 rain_rate > 0.0
                 or mower_rain_active
@@ -587,6 +664,10 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for rc in ["rainy", "pouring", "lightning-rainy", "hail", "snowy", "snowy-rainy"]
                 )
             )
+            if rain_rate > 0.0 or mower_rain_active:
+                self.internal_moisture_score = max(self.internal_moisture_score, 15.0)
+
+            delta = (wetting_rate - drying_rate) * delta_hours
             ziel_max = 100.0 if rain_active else max(self.internal_moisture_score, 55.0)
             self.internal_moisture_score = round(
                 min(ziel_max, max(0.0, self.internal_moisture_score + delta)), 1
@@ -594,7 +675,15 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             moisture_score = self.internal_moisture_score
 
         moisture_threshold = float(self._get_opt(CONF_MOISTURE_THRESHOLD, DEFAULT_MOISTURE_THRESHOLD))
-        is_dry = (moisture_score < moisture_threshold) and not mower_rain_active and (dew_spread >= 1.5)
+        dew_spread_min = float(self._get_opt(CONF_DEW_SPREAD_MIN, DEFAULT_DEW_SPREAD_MIN))
+        is_dry, _ = is_surface_dry(
+            moisture_score=moisture_score,
+            moisture_threshold=moisture_threshold,
+            dew_spread=dew_spread,
+            dew_spread_threshold=dew_spread_min,
+            mower_rain_sensor=mower_rain_active,
+            sun_elevation=elevation,
+        )
 
         if rain_rate > 0.0 or mower_rain_active:
             desc = "Regen / Mähersensor nass"
@@ -629,10 +718,10 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         elapsed_today = self.mowed_minutes_today
         if self._session_start_time:
-            ongoing_min = (now - self._session_start_time).total_seconds() / 60.0
+            ongoing_min = max(0.0, (now - self._session_start_time).total_seconds() / 60.0)
             elapsed_today += ongoing_min
 
-        remaining_minutes = max(0, int(target_minutes - elapsed_today))
+        remaining_minutes = max(0, int(round(target_minutes - elapsed_today)))
 
         # 8. Mower & Battery status
         mower_entity = self._get_opt(CONF_MOWER_ENTITY)
@@ -657,7 +746,6 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     pass
 
         # 9. Slot Evaluation
-        dew_spread_min = float(self._get_opt(CONF_DEW_SPREAD_MIN, DEFAULT_DEW_SPREAD_MIN))
         min_temp = float(self._get_opt(CONF_MIN_TEMP, DEFAULT_MIN_TEMP))
         heat_limit = float(self._get_opt(CONF_HEAT_LIMIT, DEFAULT_HEAT_LIMIT))
         radar_buffer = int(self._get_opt(CONF_RADAR_RAIN_BUFFER, DEFAULT_RADAR_RAIN_BUFFER))
@@ -692,6 +780,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             quiet_end=str(self._get_opt(CONF_QUIET_HOURS_END, DEFAULT_QUIET_HOURS_END)),
             min_battery=int(self._get_opt(CONF_MIN_BATTERY_LEVEL, DEFAULT_MIN_BATTERY)),
             remaining_minutes_today=remaining_minutes,
+            target_daily_minutes=target_minutes,
         )
 
         return {
@@ -739,6 +828,11 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not mower_entity:
             return
 
+        now = dt_util.now()
+        # Prevent duplicate command spam within 45 seconds
+        if self._last_auto_cmd_time and (now - self._last_auto_cmd_time).total_seconds() < 45:
+            return
+
         current_state = data.get("current_mower_state", "unknown")
         is_permitted = data.get("mowing_permitted", False)
         remaining_min = data.get("remaining_minutes_today", 0)
@@ -747,15 +841,16 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if current_state in MOWING_STATES:
             max_run = int(self._get_opt(CONF_MAX_RUN_TIME, 0))
             if max_run > 0 and self._session_start_time:
-                now = dt_util.now()
                 ongoing_min = (now - self._session_start_time).total_seconds() / 60.0
                 if ongoing_min >= max_run:
                     _LOGGER.info("MowMaster: Max session limit reached (%.1f min). Recalling.", ongoing_min)
+                    self._last_auto_cmd_time = now
                     await self.async_dock_mower()
                     return
 
             if remaining_min <= 0:
                 _LOGGER.info("MowMaster: Daily budget finished. Recalling mower to dock.")
+                self._last_auto_cmd_time = now
                 await self.async_dock_mower()
                 return
 
@@ -764,6 +859,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "MowMaster: Unsafe condition (%s). Calling mower home immediately.",
                     data.get("blocking_reasons"),
                 )
+                self._last_auto_cmd_time = now
                 await self.async_dock_mower()
                 return
 
@@ -776,6 +872,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "MowMaster: Optimal slot! Remaining: %d min. Dispatching mower.",
                         remaining_min,
                     )
+                    self._last_auto_cmd_time = now
                     await self.async_start_mowing()
 
     async def async_start_mowing(self) -> None:
@@ -785,18 +882,17 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         edge_interval = int(self._get_opt(CONF_EDGE_CUT_INTERVAL, 0))
+        next_run_number = self.total_runs_count + 1
         should_cut_edge = self.edge_cut_next or (
-            edge_interval > 0 and (self.total_runs_count % edge_interval == 0)
+            edge_interval > 0 and (next_run_number % edge_interval == 0)
         )
 
         edge_service = self._get_opt(CONF_EDGE_CUT_SERVICE)
-        if should_cut_edge and edge_service and "." in edge_service:
-            domain, svc = edge_service.split(".", 1)
+        if should_cut_edge and edge_service and "." in str(edge_service):
+            domain, svc = str(edge_service).split(".", 1)
             raw_data = self._get_opt(CONF_EDGE_CUT_DATA)
-            call_data = {"entity_id": mower_entity}
+            call_data: dict[str, Any] = {"entity_id": mower_entity}
             if raw_data:
-                import json
-
                 try:
                     if isinstance(raw_data, str):
                         parsed = json.loads(raw_data)

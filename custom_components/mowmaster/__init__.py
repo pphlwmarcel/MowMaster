@@ -21,6 +21,13 @@ SERVICE_START_MOWING = "start_mowing"
 SERVICE_DOCK_MOWER = "dock_mower"
 SERVICE_RESET_BUDGET = "reset_daily_budget"
 
+ALL_SERVICES = (
+    SERVICE_SET_FERTILIZED,
+    SERVICE_START_MOWING,
+    SERVICE_DOCK_MOWER,
+    SERVICE_RESET_BUDGET,
+)
+
 SCHEMA_SET_FERTILIZED = vol.Schema(
     {
         vol.Optional(ATTR_DATE): cv.date,
@@ -94,10 +101,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator: MowMasterCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_unload()
 
+        # Remove services if last entry is unloaded
+        if not hass.data[DOMAIN]:
+            for svc in ALL_SERVICES:
+                if hass.services.has_service(DOMAIN, svc):
+                    hass.services.async_remove(DOMAIN, svc)
+
     return unload_ok
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry after options change."""
     await hass.config_entries.async_reload(entry.entry_id)
-

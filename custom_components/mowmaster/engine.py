@@ -6,9 +6,8 @@ physical lawn surface moisture, and slot-evaluation algorithms for autonomous ro
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import math
-from typing import Any
 
 from .const import (
     DEFAULT_CAPACITY_CHAOS,
@@ -67,7 +66,7 @@ def calculate_photoperiod(latitude: float, day_of_year: int) -> tuple[float, flo
     seasonal_trend < 0: Days are shortening (Summer heading into Autumn/Winter).
     Works globally for Northern, Southern and Equatorial hemispheres.
     """
-    lat_rad = math.radians(latitude)
+    lat_rad = math.radians(max(-89.5, min(89.5, float(latitude))))
 
     # Solar declination angle (Cooper 1969)
     declination = 23.45 * math.sin(math.radians((360.0 / 365.0) * (day_of_year - 81)))
@@ -242,10 +241,16 @@ def calculate_gdd(
     t_base: float = 6.0,
     t_cap: float = 28.0,
 ) -> float:
-    """Calculate Growing Degree Days (GDD) for cool-season turfgrass."""
-    effective_max = min(float(t_max), t_cap)
-    effective_min = max(float(t_min), t_base)
-    mean_temp = (effective_max + effective_min) / 2.0
+    """Calculate Growing Degree Days (GDD) for cool-season turfgrass (Method 1).
+
+    Uses true daily average temperature without artificially clamping cold nights up to t_base,
+    so frost/cold nights accurately reduce daily mean soil & grass temperature.
+    """
+    t_high = max(float(t_max), float(t_min))
+    t_low = min(float(t_max), float(t_min))
+
+    effective_max = min(t_high, t_cap)
+    mean_temp = (effective_max + t_low) / 2.0
     gdd = max(0.0, mean_temp - t_base)
     return round(gdd, 2)
 
@@ -260,18 +265,30 @@ def calculate_fertilizer_factor(days_since_fertilized: int | None) -> float:
     return round(1.0 + boost, 2)
 
 
-def calculate_soil_factor(soil_moisture_percent: float | None) -> float:
-    """Calculate growth multiplier based on soil moisture."""
-    if soil_moisture_percent is None:
-        return 1.0
+def calculate_soil_factor(
+    soil_moisture_percent: float | None,
+    lawn_irrigated: bool = False,
+    gdd: float = 10.0,
+) -> float:
+    """Calculate growth multiplier based on soil moisture or irrigation setting."""
+    if soil_moisture_percent is not None:
+        sm = max(0.0, min(100.0, float(soil_moisture_percent)))
+        if sm < 15.0:
+            return 0.3  # Drought dormancy
+        if sm < 25.0:
+            return 0.7  # Dry stress
+        if sm <= 75.0:
+            return 1.15  # Optimal root zone moisture
+        return 1.0  # Saturated
 
-    sm = max(0.0, min(100.0, float(soil_moisture_percent)))
-    if sm < 15.0:
-        return 0.3
-    if sm < 25.0:
-        return 0.7
-    if sm <= 60.0:
-        return 1.15
+    # Without hardware soil sensor: account for regular summer irrigation vs dry heat slump
+    if lawn_irrigated:
+        return 1.15 if gdd >= 8.0 else 1.0
+
+    if gdd > 15.0:
+        # Unirrigated C3 grass slows down during summer heat (mean temp > 21°C)
+        return round(max(0.65, 1.0 - (gdd - 15.0) * 0.04), 2)
+
     return 1.0
 
 
@@ -284,10 +301,14 @@ def calculate_growth_index(
 ) -> tuple[float, float, float]:
     """Combine GDD, location-based photoperiod season factor, fertilizer, and soil factors.
 
-    Calculates exact season factor from latitude and day of year for any location worldwide.
+    Models C3 cool-season turfgrass optimum curve (peak efficiency around 16-21°C mean temp)
+    and calculates exact season factor from latitude and day of year worldwide.
     Returns (growth_index, season_factor, daylight_hours).
     """
-    base_growth = gdd / 10.0
+    # C3 grass optimum curve: above GDD=15 (mean temp > 21°C), photorespiration tapers net growth
+    effective_gdd = gdd if gdd <= 15.0 else 15.0 + (gdd - 15.0) * 0.35
+    base_growth = effective_gdd / 10.0
+
     season_factor, daylight_hours = calculate_seasonal_growth_factor(latitude, day_of_year)
     index = base_growth * season_factor * fertilizer_factor * soil_factor
     growth_index = round(max(0.0, min(3.0, index)), 2)
@@ -303,8 +324,8 @@ def calculate_daily_target_minutes(
     """Calculate the target mowing duration (minutes) for today.
 
     In peak season (growth_index = 1.0), a robot mower should cover the entire lawn
-    approximately 2.5 times per week (distributed over the week).
-    In late autumn / winter (growth_index < 0.15), grass growth is negligible (< 15 min),
+    approximately 2.5 times per week (chaos) or 1.8 times per week (systematic).
+    In late autumn / winter (target < 15 min), grass growth is negligible,
     resulting in 0 minutes mowing time.
     """
     area = max(10.0, float(lawn_area_m2))
@@ -338,13 +359,45 @@ def calculate_daily_target_minutes(
     return max(0, min(720, target_minutes))
 
 
+def is_surface_dry(
+    moisture_score: float,
+    moisture_threshold: float,
+    dew_spread: float,
+    dew_spread_threshold: float,
+    mower_rain_sensor: bool = False,
+    sun_elevation: float = 10.0,
+) -> tuple[bool, str | None]:
+    """Determine if the grass surface is dry enough to mow and return optional blocking reason.
+
+    When the moisture account has already dried down to ~0.0 pts and the sun is well up
+    (> 20° elevation), a condensation safety spread of 1.5°C is sufficient so warm, humid
+    cloud cover doesn't falsely block a dry lawn. During morning dew dry-off or when residual
+    moisture > 0.2 pts exists, the full configured dew_spread_threshold is enforced.
+    """
+    if mower_rain_sensor:
+        return False, "rain_active"
+
+    if moisture_score >= moisture_threshold:
+        return False, "lawn_surface_wet"
+
+    effective_dew_min = (
+        min(1.5, dew_spread_threshold)
+        if (moisture_score <= 0.2 and sun_elevation > 20.0)
+        else dew_spread_threshold
+    )
+    if dew_spread < effective_dew_min:
+        return False, "dew_spread_low"
+
+    return True, None
+
+
 def is_time_in_range(now_time: time, start_str: str, end_str: str) -> bool:
     """Check if now_time falls inside a HH:MM to HH:MM window."""
     try:
-        sh, sm = map(int, start_str.split(":"))
-        eh, em = map(int, end_str.split(":"))
-        start = time(sh, sm)
-        end = time(eh, em)
+        parts_s = start_str.split(":")
+        parts_e = end_str.split(":")
+        start = time(int(parts_s[0]), int(parts_s[1]))
+        end = time(int(parts_e[0]), int(parts_e[1]))
     except Exception:
         return False
 
@@ -384,6 +437,7 @@ def evaluate_slot(
     quiet_end: str = DEFAULT_QUIET_HOURS_END,
     min_battery: int = DEFAULT_MIN_BATTERY,
     remaining_minutes_today: int = 0,
+    target_daily_minutes: int | None = None,
 ) -> SlotEvaluation:
     """Comprehensive evaluation matching physical lawn requirements and user criteria."""
     blocking_reasons: list[str] = []
@@ -399,20 +453,26 @@ def evaluate_slot(
     # Rain Radar imminent warning
     if rain_radar_sum is not None and rain_radar_sum >= 0.2:
         rain_blocked = True
-        blocking_reasons.append("rain_radar_approaching")
-    elif rain_radar_minutes is not None and 0 <= rain_radar_minutes <= radar_buffer_minutes:
+        if "rain_radar_approaching" not in blocking_reasons:
+            blocking_reasons.append("rain_radar_approaching")
+    elif rain_radar_minutes is not None and 0.0 < rain_radar_minutes <= radar_buffer_minutes:
         rain_blocked = True
-        blocking_reasons.append("rain_radar_approaching")
+        if "rain_radar_approaching" not in blocking_reasons:
+            blocking_reasons.append("rain_radar_approaching")
 
-    # 2. Moisture / Nässe-Score Check (Physical Wetness Balance)
+    # 2. Moisture / Nässe-Score & Dew Spread Check
     dew_spread = round(current_temp - dew_point, 2)
-    dew_blocked = False
-    if moisture_score >= moisture_threshold:
-        dew_blocked = True
-        blocking_reasons.append("lawn_surface_wet")
-    elif dew_spread < dew_spread_threshold:
-        dew_blocked = True
-        blocking_reasons.append("dew_spread_low")
+    surface_ok, dew_reason = is_surface_dry(
+        moisture_score=moisture_score,
+        moisture_threshold=moisture_threshold,
+        dew_spread=dew_spread,
+        dew_spread_threshold=dew_spread_threshold,
+        mower_rain_sensor=False,  # Already handled under rain_blocked
+        sun_elevation=sun_elevation,
+    )
+    dew_blocked = not surface_ok
+    if dew_blocked and dew_reason:
+        blocking_reasons.append(dew_reason)
 
     # 3. Minimum Temperature Check (Grass freezing or too cold to cleanly cut)
     cold_blocked = current_temp < min_temp
@@ -425,29 +485,31 @@ def evaluate_slot(
         blocking_reasons.append("heat_limit_exceeded")
 
     # 5. Location-Based Photoperiod Morning Window
-    # If daylight hours are short (< 11h), mornings are cold and dewy: delay start until 12:00.
+    # Only delay mornings during short-day seasons (Autumn/Late Winter/Early Spring: < 11.5h daylight)
+    # when mornings remain cool (< 14°C) and sun is still low.
     seasonal_blocked = False
     if not sun_above_horizon:
         seasonal_blocked = True
         blocking_reasons.append("sun_below_horizon")
-    else:
-        req_hour = 12 if daylight_hours < 11.0 else 10
-        if now.hour < req_hour:
+    elif daylight_hours < 11.5:
+        req_hour = 12 if daylight_hours < 10.0 else 11
+        if now.hour < req_hour and current_temp < 14.0:
             seasonal_blocked = True
             blocking_reasons.append("seasonal_morning_cold")
 
-    # 6. Biological Growth Dormancy Check
-    growth_dormant = (growth_index < 0.05) or (remaining_minutes_today <= 0)
+    # 6. Biological Growth Dormancy vs. Daily Quota Completed Check
+    effective_target = target_daily_minutes if target_daily_minutes is not None else remaining_minutes_today
+    growth_dormant = (growth_index < 0.05) or (effective_target <= 0)
     if growth_dormant:
         blocking_reasons.append("growth_dormant")
+    elif remaining_minutes_today <= 0:
+        blocking_reasons.append("daily_budget_completed")
 
     # 7. Wildlife Protection Check (Hedgehog / Igelschutz)
     wildlife_blocked = False
     if wildlife_enabled and sunrise and sunset:
-        import datetime as dt_module
-
-        safe_start = sunrise + dt_module.timedelta(minutes=wildlife_sunrise_offset)
-        safe_end = sunset - dt_module.timedelta(minutes=wildlife_sunset_offset)
+        safe_start = sunrise + timedelta(minutes=wildlife_sunrise_offset)
+        safe_end = sunset - timedelta(minutes=wildlife_sunset_offset)
 
         if now < safe_start or now > safe_end:
             wildlife_blocked = True
@@ -469,7 +531,7 @@ def evaluate_slot(
 
     # Urgency Score calculation (0 - 100%)
     urgency = 0
-    if remaining_minutes_today > 0 and growth_index >= 0.05:
+    if remaining_minutes_today > 0 and not growth_dormant:
         base_urgency = min(80, int((remaining_minutes_today / 120.0) * 50))
         if is_permitted:
             urgency = min(100, base_urgency + 30)

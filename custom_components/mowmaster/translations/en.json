@@ -9,6 +9,7 @@
           "weather_entity": "Weather Provider Entity",
           "lawn_area": "Lawn Area (m²)",
           "mower_type": "Navigation Style",
+          "lawn_irrigated": "Lawn is regularly irrigated in summer",
           "configure_pro": "Configure Advanced Pro Settings"
         },
         "data_description": {
@@ -16,6 +17,7 @@
           "weather_entity": "Weather integration providing temperature, humidity, and rain forecasts.",
           "lawn_area": "Total lawn area to mow in square meters.",
           "mower_type": "Select the navigation principle of your mower.",
+          "lawn_irrigated": "Enable if the lawn is irrigated during dry summer periods (prevents heat-slump growth reduction).",
           "configure_pro": "Enable to immediately configure local sensors (weather station, dew point, soil moisture) and custom thresholds."
         }
       },
@@ -113,12 +115,31 @@
   "options": {
     "step": {
       "init": {
-        "title": "MowMaster Pro Settings",
+        "title": "MowMaster Settings",
         "description": "Select the configuration category to adjust:",
         "menu_options": {
+          "basic": "Basic Settings (Lawn Area, Mower & Irrigation)",
           "sensors": "Local Sensors & Moisture Sources",
           "thresholds": "Thresholds & Protection (Dew, Heat, Wildlife)",
           "mower_management": "Runtime, Battery & Edge Cutting"
+        }
+      },
+      "basic": {
+        "title": "Basic Settings",
+        "description": "Adjust lawn area, mower entity, weather provider, and summer irrigation.",
+        "data": {
+          "mower_entity": "Lawn Mower Entity",
+          "weather_entity": "Weather Provider Entity",
+          "lawn_area": "Lawn Area (m²)",
+          "mower_type": "Navigation Style",
+          "lawn_irrigated": "Lawn is regularly irrigated in summer"
+        },
+        "data_description": {
+          "mower_entity": "Select your robotic lawn mower entity (e.g. lawn_mower.bobbi).",
+          "weather_entity": "Weather integration providing temperature, humidity, and rain forecasts.",
+          "lawn_area": "Total lawn area to mow in square meters.",
+          "mower_type": "Select the navigation principle of your mower.",
+          "lawn_irrigated": "Enable if the lawn is irrigated during dry summer periods (increases mowing budget during warm summer weather)."
         }
       },
       "sensors": {

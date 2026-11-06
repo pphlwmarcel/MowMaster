@@ -9,6 +9,7 @@
           "weather_entity": "Wetterdienst-Entität",
           "lawn_area": "Rasenfläche (m²)",
           "mower_type": "Navigationsprinzip des Mähers",
+          "lawn_irrigated": "Rasen wird im Sommer regelmäßig bewässert",
           "configure_pro": "Erweiterte Pro-Einstellungen konfigurieren"
         },
         "data_description": {
@@ -16,6 +17,7 @@
           "weather_entity": "Wetterdienst für Temperatur-, Feuchte- und Niederschlagsvorhersagen.",
           "lawn_area": "Gesamte zu mähende Rasenfläche in Quadratmetern.",
           "mower_type": "Wähle das Navigationsprinzip deines Mähroboters.",
+          "lawn_irrigated": "Aktivieren, falls der Rasen bei Trockenheit bewässert wird (verhindert Hitzestopp des Wachstumsindex).",
           "configure_pro": "Aktivieren, um direkt im Anschluss Sensoren (Wetterstation, Taupunkt, Bodenfeuchte) und Grenzwerte einzurichten."
         }
       },
@@ -113,12 +115,31 @@
   "options": {
     "step": {
       "init": {
-        "title": "MowMaster Pro-Einstellungen",
+        "title": "MowMaster Einstellungen",
         "description": "Wähle einen Bereich, den du anpassen möchtest:",
         "menu_options": {
+          "basic": "Grundeinstellungen (Rasenfläche, Mäher & Bewässerung)",
           "sensors": "Lokale Sensoren & Rasenfeuchte",
           "thresholds": "Grenzwerte & Schutz (Taupunkt, Hitze, Igel)",
           "mower_management": "Laufzeit, Akku & Kantenmähen"
+        }
+      },
+      "basic": {
+        "title": "Grundeinstellungen",
+        "description": "Passe Rasenfläche, Mähroboter, Wetterdienst und Bewässerung an.",
+        "data": {
+          "mower_entity": "Mähroboter-Entität",
+          "weather_entity": "Wetterdienst-Entität",
+          "lawn_area": "Rasenfläche (m²)",
+          "mower_type": "Navigationsprinzip des Mähers",
+          "lawn_irrigated": "Rasen wird im Sommer regelmäßig bewässert"
+        },
+        "data_description": {
+          "mower_entity": "Wähle deine Mähroboter-Entität (z.B. lawn_mower.bobbi).",
+          "weather_entity": "Wetterdienst für Temperatur-, Feuchte- und Niederschlagsvorhersagen.",
+          "lawn_area": "Gesamte zu mähende Rasenfläche in Quadratmetern.",
+          "mower_type": "Wähle das Navigationsprinzip deines Mähroboters.",
+          "lawn_irrigated": "Aktivieren, falls der Rasen bei Trockenheit bewässert wird (erhöht das Mähbudget bei warmem Sommerwetter)."
         }
       },
       "sensors": {

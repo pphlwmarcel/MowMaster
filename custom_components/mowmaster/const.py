@@ -2,6 +2,8 @@
 from homeassistant.const import Platform
 
 DOMAIN = "mowmaster"
+INTEGRATION_VERSION = "0.2.2"
+
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -9,11 +11,12 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
 ]
 
-# Config flow & Options
+# Config flow & Options (Basic)
 CONF_MOWER_ENTITY = "mower_entity"
 CONF_WEATHER_ENTITY = "weather_entity"
 CONF_LAWN_AREA = "lawn_area"
 CONF_MOWER_TYPE = "mower_type"
+CONF_LAWN_IRRIGATED = "lawn_irrigated"
 CONF_MOWER_CAPACITY = "mower_capacity"
 CONF_CONFIGURE_PRO = "configure_pro"
 
@@ -34,6 +37,21 @@ CONF_SENSOR_SOLAR = "sensor_solar"
 CONF_SENSOR_SOLAR_DIFF = "sensor_solar_diff"
 CONF_SENSOR_SOIL = "sensor_soil"
 CONF_SENSOR_BATTERY = "sensor_battery"
+
+ALL_SENSOR_KEYS = (
+    CONF_SENSOR_TEMP,
+    CONF_SENSOR_HUMIDITY,
+    CONF_SENSOR_DEW_POINT,
+    CONF_SENSOR_MOISTURE_SCORE,
+    CONF_SENSOR_MOWER_RAIN,
+    CONF_SENSOR_RAIN,
+    CONF_SENSOR_RAIN_RADAR,
+    CONF_SENSOR_SOLAR_DIFF,
+    CONF_SENSOR_SOLAR,
+    CONF_SENSOR_WIND,
+    CONF_SENSOR_SOIL,
+    CONF_SENSOR_BATTERY,
+)
 
 # Thresholds & Constraints
 CONF_DEW_SPREAD_MIN = "dew_spread_min"
@@ -56,6 +74,7 @@ CONF_EDGE_CUT_DATA = "edge_cut_data"
 # Defaults
 DEFAULT_LAWN_AREA = 250.0  # m²
 DEFAULT_MOWER_TYPE = MOWER_TYPE_CHAOS
+DEFAULT_LAWN_IRRIGATED = False
 DEFAULT_CAPACITY_CHAOS = 50.0  # m²/h
 DEFAULT_CAPACITY_SYSTEMATIC = 120.0  # m²/h
 DEFAULT_DEW_SPREAD_MIN = 2.5  # °C
@@ -90,4 +109,3 @@ ATTR_REMAINING_MINUTES = "remaining_minutes_today"
 ATTR_RUNS_COUNT = "total_runs_count"
 ATTR_DRYING_RATE = "drying_rate"
 ATTR_WETTING_RATE = "wetting_rate"
-
