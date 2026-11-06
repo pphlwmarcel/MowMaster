@@ -223,6 +223,7 @@ def calculate_wetting_rate(
     mower_wet: bool = False,
     weather_condition: str | None = None,
     sun_elevation: float = 0.0,
+    has_solar_diff_sensor: bool = True,
 ) -> float:
     """Calculate lawn surface wetting rate (pts/h) from precipitation, fog, or night dew condensation."""
     cond = (weather_condition or "").lower()
@@ -234,7 +235,19 @@ def calculate_wetting_rate(
     if cond == "fog":
         return 10.0
 
-    strahlung_nacht = min(diff_sonne, 0.0)
+    if has_solar_diff_sensor or diff_sonne < 0.0:
+        strahlung_nacht = min(diff_sonne, 0.0)
+    elif sun_elevation < 5.0:
+        # Estimate nocturnal radiative grass cooling when no differential temperature sensor is installed
+        if any(c in cond for c in ("clear", "sunny")):
+            strahlung_nacht = -3.0
+        elif "partlycloudy" in cond:
+            strahlung_nacht = -2.0
+        else:
+            strahlung_nacht = -1.2
+    else:
+        strahlung_nacht = 0.0
+
     t_halm = temp_c + strahlung_nacht
 
     # Nocturnal dew formation when grass cools below dew point

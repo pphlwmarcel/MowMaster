@@ -205,6 +205,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         watch_list = [
             self._get_opt(CONF_WEATHER_ENTITY),
+            self._get_opt(CONF_SENSOR_TEMP),
             self._get_opt(CONF_SENSOR_RAIN_RADAR),
             self._get_opt(CONF_SENSOR_RAIN),
             self._get_opt(CONF_SENSOR_MOWER_RAIN),
@@ -234,7 +235,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "total_runs_count": self.total_runs_count,
             "edge_cut_next": self.edge_cut_next,
             "auto_mow_enabled": self.auto_mow_enabled,
-            "internal_moisture_score": round(self.internal_moisture_score, 1),
+            "internal_moisture_score": round(self.internal_moisture_score, 4),
             "moisture_initialized": self._moisture_initialized,
             "session_start_time": (
                 self._session_start_time.isoformat() if self._session_start_time else None
@@ -249,6 +250,20 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if key in self.entry.options:
             return self.entry.options[key]
         return self.entry.data.get(key, default)
+
+    @staticmethod
+    def _convert_wind_to_kmh(val: float, unit: str | None) -> float:
+        """Normalize wind speed from m/s, mph, kn, or ft/s into km/h."""
+        u = (unit or "").strip().lower()
+        if u in ("m/s", "mps"):
+            return round(val * 3.6, 1)
+        if u in ("mph", "mi/h"):
+            return round(val * 1.60934, 1)
+        if u in ("kn", "kt", "kts", "knots"):
+            return round(val * 1.852, 1)
+        if u in ("ft/s", "fps"):
+            return round(val * 1.09728, 1)
+        return round(val, 1)
 
     @callback
     def _handle_mower_state_change(self, event: Event) -> None:
@@ -493,11 +508,14 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 4. Dew point calculation or measurement
         dew_point: float
         dew_sensor = self._get_opt(CONF_SENSOR_DEW_POINT)
-        if dew_sensor:
+        local_temp_and_hum = bool(temp_sensor and hum_sensor)
+        if dew_sensor and not local_temp_and_hum:
             st = self.hass.states.get(dew_sensor)
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 try:
-                    dew_point = float(st.state)
+                    raw_dew = float(st.state)
+                    # Physical bound: dew point cannot exceed local ambient air temperature
+                    dew_point = min(current_temp, raw_dew)
                 except ValueError:
                     dew_point = calculate_dew_point(current_temp, current_humidity)
             else:
@@ -505,7 +523,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             dew_point = calculate_dew_point(current_temp, current_humidity)
 
-        dew_spread = round(current_temp - dew_point, 2)
+        dew_spread = round(max(0.0, current_temp - dew_point), 2)
 
         # Rain rate sensor
         rain_sensor = self._get_opt(CONF_SENSOR_RAIN)
@@ -527,16 +545,33 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 mower_rain_active = st.state.lower() in ("on", "true", "wet")
 
-        # Wind sensor
+        # Wind sensor (with fallback to weather entity attributes and automatic unit conversion to km/h)
         wind_sensor = self._get_opt(CONF_SENSOR_WIND)
-        wind_speed: float = 0.0
+        wind_speed: float | None = None
         if wind_sensor:
             st = self.hass.states.get(wind_sensor)
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 try:
-                    wind_speed = float(st.state)
+                    raw_wind = float(st.state)
+                    w_unit = st.attributes.get("unit_of_measurement") if st.attributes else None
+                    wind_speed = self._convert_wind_to_kmh(raw_wind, w_unit)
                 except ValueError:
                     pass
+        if (
+            wind_speed is None
+            and weather_state
+            and weather_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+            and weather_state.attributes
+        ):
+            w_attr = weather_state.attributes.get("wind_speed")
+            if w_attr is not None:
+                try:
+                    w_unit = weather_state.attributes.get("wind_speed_unit")
+                    wind_speed = self._convert_wind_to_kmh(float(w_attr), w_unit)
+                except (ValueError, TypeError):
+                    pass
+        if wind_speed is None:
+            wind_speed = 0.0
 
         # Solar difference (e.g. sensor.garten_sonnensensor_temperatur_ch3)
         solar_diff_sensor = self._get_opt(CONF_SENSOR_SOLAR_DIFF)
@@ -677,6 +712,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mower_wet=mower_rain_active,
             weather_condition=weather_cond,
             sun_elevation=elevation,
+            has_solar_diff_sensor=bool(solar_diff_sensor),
         )
 
         # Moisture score determination (external helper or internal physical integration)
@@ -686,13 +722,13 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             st = self.hass.states.get(score_sensor)
             if st and st.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 try:
-                    moisture_score = float(st.state)
-                    self.internal_moisture_score = round(moisture_score, 1)
+                    moisture_score = round(float(st.state), 1)
+                    self.internal_moisture_score = round(float(st.state), 4)
                     self._moisture_initialized = True
                 except ValueError:
-                    moisture_score = self.internal_moisture_score
+                    moisture_score = round(self.internal_moisture_score, 1)
             else:
-                moisture_score = self.internal_moisture_score
+                moisture_score = round(self.internal_moisture_score, 1)
         else:
             elapsed_sec = max(0.0, (now - self._last_moisture_update).total_seconds())
             delta_hours = min(1.0, elapsed_sec / 3600.0)
@@ -741,7 +777,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         eff_drying = max(drying_rate, 3.0 if sun_shining else 1.5)
                         dew_carryover = max(0.0, 55.0 - (drying_hours * eff_drying))
 
-                self.internal_moisture_score = round(max(base_seed, dew_carryover), 1)
+                self.internal_moisture_score = round(max(base_seed, dew_carryover), 4)
                 self._moisture_initialized = True
                 _LOGGER.info(
                     "MowMaster: Seeded initial lawn moisture score to %.1f (base=%.1f, dew_carryover=%.1f, humidity=%.0f%%, spread=%.1f°C)",
@@ -752,15 +788,15 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     dew_spread,
                 )
 
-            if rain_rate > 0.0 or mower_rain_active:
-                self.internal_moisture_score = max(self.internal_moisture_score, 15.0)
+            if rain_active:
+                self.internal_moisture_score = max(self.internal_moisture_score, 35.0)
 
             delta = (wetting_rate - drying_rate) * delta_hours
             ziel_max = 100.0 if rain_active else max(self.internal_moisture_score, 55.0)
             self.internal_moisture_score = round(
-                min(ziel_max, max(0.0, self.internal_moisture_score + delta)), 1
+                min(ziel_max, max(0.0, self.internal_moisture_score + delta)), 4
             )
-            moisture_score = self.internal_moisture_score
+            moisture_score = round(self.internal_moisture_score, 1)
 
         moisture_threshold = float(self._get_opt(CONF_MOISTURE_THRESHOLD, DEFAULT_MOISTURE_THRESHOLD))
         dew_spread_min = float(self._get_opt(CONF_DEW_SPREAD_MIN, DEFAULT_DEW_SPREAD_MIN))
@@ -977,9 +1013,30 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         edge_service = self._get_opt(CONF_EDGE_CUT_SERVICE)
         if should_cut_edge and edge_service and "." in str(edge_service):
-            domain, svc = str(edge_service).split(".", 1)
+            edge_str = str(edge_service).strip()
+            prefix, target_part = edge_str.split(".", 1)
+            prefix_low = prefix.lower()
             raw_data = self._get_opt(CONF_EDGE_CUT_DATA)
-            call_data: dict[str, Any] = {"entity_id": mower_entity}
+
+            # Support direct entity IDs (e.g. button.bobbi_kantenschnitt, script.*, switch.*)
+            if prefix_low in ("button", "input_button") and self.hass.states.get(edge_str) is not None:
+                domain = prefix_low
+                svc = "press"
+                call_data: dict[str, Any] = {"entity_id": edge_str}
+            elif prefix_low in ("script", "switch") and self.hass.states.get(edge_str) is not None:
+                domain = prefix_low
+                svc = "turn_on"
+                call_data = {"entity_id": edge_str}
+            else:
+                domain = prefix_low
+                svc = target_part
+                call_data = {"entity_id": mower_entity}
+                # If user entered "button.press" without JSON entity_id, resolve companion edge button
+                if domain in ("button", "input_button") and svc == "press":
+                    discovered = discover_companion_sensors(self.hass, mower_entity, None)
+                    if CONF_EDGE_CUT_SERVICE in discovered:
+                        call_data["entity_id"] = discovered[CONF_EDGE_CUT_SERVICE]
+
             if raw_data:
                 try:
                     if isinstance(raw_data, str):
@@ -989,7 +1046,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except Exception as err:
                     _LOGGER.warning("Could not parse edge cut service data: %s", err)
 
-            _LOGGER.info("MowMaster: Calling edge cut service %s with %s", edge_service, call_data)
+            _LOGGER.info("MowMaster: Calling edge cut %s.%s with %s", domain, svc, call_data)
             await self.hass.services.async_call(domain, svc, call_data, blocking=True)
             self.edge_cut_next = False
             await self._async_save()

@@ -119,7 +119,11 @@ def discover_companion_sensors(
 
         for st in all_states:
             eid = st.entity_id.lower()
-            if eid.startswith(f"binary_sensor.{mower_slug}_") or eid.startswith(f"sensor.{mower_slug}_"):
+            if (
+                eid.startswith(f"binary_sensor.{mower_slug}_")
+                or eid.startswith(f"sensor.{mower_slug}_")
+                or eid.startswith(f"button.{mower_slug}_")
+            ):
                 if st.entity_id not in candidate_ids:
                     candidate_ids.append(st.entity_id)
 
@@ -138,6 +142,9 @@ def discover_companion_sensors(
             ):
                 if dc == "battery" or any(k in cid_low for k in ("battery", "akku", "batterie")):
                     discovered[CONF_SENSOR_BATTERY] = cid
+            elif cid_low.startswith("button.") and CONF_EDGE_CUT_SERVICE not in discovered:
+                if any(k in cid_low for k in ("kantenschnitt", "edge_cut", "edgecut", "border_cut", "border")):
+                    discovered[CONF_EDGE_CUT_SERVICE] = cid
 
     # 2. Discover Weather companion entities (Dew point, Rain radar, Rain rate, Wind speed)
     if weather_entity and "." in weather_entity:
@@ -735,14 +742,33 @@ class MowMasterOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Configure runtime limits, battery thresholds, and edge mowing."""
+        merged = self._merged_current()
+        discovered = discover_companion_sensors(
+            self.hass,
+            merged.get(CONF_MOWER_ENTITY),
+            merged.get(CONF_WEATHER_ENTITY),
+        )
+        cleared = list(self._options.get(CONF_CLEARED_SENSORS, []))
+        if (
+            CONF_EDGE_CUT_SERVICE in discovered
+            and CONF_EDGE_CUT_SERVICE not in self._options
+            and CONF_EDGE_CUT_SERVICE not in cleared
+        ):
+            self._options[CONF_EDGE_CUT_SERVICE] = discovered[CONF_EDGE_CUT_SERVICE]
+
         if user_input is not None:
             self._options.update(user_input)
             for opt_key in (CONF_EDGE_CUT_SERVICE, CONF_EDGE_CUT_DATA):
                 val = user_input.get(opt_key)
                 if val and str(val).strip():
                     self._options[opt_key] = str(val).strip()
+                    if opt_key in cleared:
+                        cleared.remove(opt_key)
                 else:
+                    if opt_key == CONF_EDGE_CUT_SERVICE and opt_key not in cleared:
+                        cleared.append(opt_key)
                     self._options.pop(opt_key, None)
+            self._options[CONF_CLEARED_SENSORS] = cleared
             return await self._async_save_options()
 
         mower_type = self._options.get(
