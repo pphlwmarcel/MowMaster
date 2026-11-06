@@ -153,6 +153,14 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if k not in current_opts and k not in cleared:
                     current_opts[k] = v
                     updated_opts = True
+                elif (
+                    k == CONF_SENSOR_RAIN_RADAR
+                    and k not in cleared
+                    and str(current_opts.get(k, "")).endswith("_radar_niederschlag_aktuell")
+                    and v != current_opts.get(k)
+                ):
+                    current_opts[k] = v
+                    updated_opts = True
             if updated_opts:
                 self.hass.config_entries.async_update_entry(self.entry, options=current_opts)
 
@@ -167,6 +175,12 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if "internal_moisture_score" in stored:
                 self.internal_moisture_score = float(stored["internal_moisture_score"])
             self._moisture_initialized = bool(stored.get("moisture_initialized", False))
+
+            raw_lmu = stored.get("last_moisture_update")
+            if isinstance(raw_lmu, str):
+                parsed_lmu = dt_util.parse_datetime(raw_lmu)
+                if parsed_lmu and parsed_lmu <= now:
+                    self._last_moisture_update = parsed_lmu
 
             if stored.get("observed_t_max") is not None:
                 self._observed_t_max = float(stored["observed_t_max"])
@@ -237,6 +251,7 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "auto_mow_enabled": self.auto_mow_enabled,
             "internal_moisture_score": round(self.internal_moisture_score, 4),
             "moisture_initialized": self._moisture_initialized,
+            "last_moisture_update": self._last_moisture_update.isoformat(),
             "session_start_time": (
                 self._session_start_time.isoformat() if self._session_start_time else None
             ),
@@ -629,6 +644,32 @@ class MowMasterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     # Ignore stale timestamps more than 2 minutes in the past
                     if -2.0 <= diff_min <= 1440.0:
                         radar_minutes = max(0.1, round(diff_min, 1))
+                elif isinstance(attrs.get("data"), list) and attrs.get("data"):
+                    # Parse DWD-style 5-minute radar forecast list [{"datetime": "...", "value": ...}]
+                    future_sum = 0.0
+                    first_rain_min: float | None = None
+                    for item in attrs["data"]:
+                        if not isinstance(item, dict):
+                            continue
+                        dt_raw = item.get("datetime")
+                        val_raw = item.get("value")
+                        if dt_raw is None or val_raw is None:
+                            continue
+                        try:
+                            f_val = float(val_raw)
+                        except (ValueError, TypeError):
+                            continue
+                        p_dt = dt_util.parse_datetime(str(dt_raw))
+                        if p_dt:
+                            d_min = (p_dt - now).total_seconds() / 60.0
+                            if -5.0 <= d_min <= 180.0:
+                                future_sum += f_val
+                                if f_val > 0.0 and first_rain_min is None:
+                                    first_rain_min = max(0.1, round(d_min, 1))
+                    if first_rain_min is not None:
+                        radar_minutes = first_rain_min
+                    if radar_sum is None:
+                        radar_sum = round(future_sum, 2)
                 else:
                     try:
                         val = float(st.state)

@@ -2,7 +2,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "mowmaster"
-INTEGRATION_VERSION = "0.2.6"
+INTEGRATION_VERSION = "0.2.7"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,

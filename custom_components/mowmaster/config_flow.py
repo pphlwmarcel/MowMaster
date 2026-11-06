@@ -179,9 +179,12 @@ def discover_companion_sensors(
                 for s in ("_taupunkt", "_dew_point", "_dewpoint")
             ):
                 discovered[CONF_SENSOR_DEW_POINT] = cid
-            elif CONF_SENSOR_RAIN_RADAR not in discovered and any(
-                k in cid_low for k in ("radar", "nachster_niederschlag", "next_rain")
+            elif any(
+                k in cid_low for k in ("nachster_niederschlag", "naechster_niederschlag", "next_rain")
             ):
+                # Always prefer "next rain" timestamp sensor over "current radar" sensor
+                discovered[CONF_SENSOR_RAIN_RADAR] = cid
+            elif CONF_SENSOR_RAIN_RADAR not in discovered and "radar" in cid_low:
                 discovered[CONF_SENSOR_RAIN_RADAR] = cid
             elif (
                 CONF_SENSOR_RAIN not in discovered
